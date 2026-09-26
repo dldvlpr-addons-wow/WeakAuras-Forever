@@ -1,0 +1,11 @@
+## Interface: 16001
+# WOW_INTERFACE_TARGETS: vanilla
+## Title: WeakAuras Forever Archive
+## Author: The WeakAuras Team, dldvlpr (WoW Forever port)
+## X-License: GPL-2.0
+## X-Website: https://github.com/dldvlpr-addons-wow/WeakAuras-Forever
+## Version: 5.22.0
+## IconTexture: Interface\AddOns\WeakAuras\Media\Textures\icon.blp
+## LoadOnDemand: 1
+## SavedVariables: WeakAurasArchive
+## Dependencies: WeakAuras

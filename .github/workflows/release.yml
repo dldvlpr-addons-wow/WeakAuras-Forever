@@ -1,0 +1,23 @@
+name: Release
+
+# Pushing a tag (e.g. 5.22.0-forever.1) builds the zip with the BigWigs packager
+# and publishes it as a GitHub release.
+# CurseForge and Wago are skipped: the .toc files carry no project ID.
+
+on:
+  push:
+    tags: ["*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: BigWigsMods/packager@v2

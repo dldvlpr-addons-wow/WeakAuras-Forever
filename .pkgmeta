@@ -1,0 +1,15 @@
+package-as: WeakAuras
+
+move-folders:
+  WeakAuras/WeakAuras: WeakAuras
+  WeakAuras/WeakAurasArchive: WeakAurasArchive
+  WeakAuras/WeakAurasModelPaths: WeakAurasModelPaths
+  WeakAuras/WeakAurasOptions: WeakAurasOptions
+  WeakAuras/WeakAurasTemplates: WeakAurasTemplates
+
+ignore:
+  - README.md
+  - CHANGES.md
+  - LICENSE
+  - TakenDamage_Forever.txt
+  - "*.zip"
