@@ -1,3 +1,5 @@
+<img src=".github/logo.png" alt="WeakAuras Forever logo" width="128" align="right">
+
 # WeakAuras Forever
 
 The WeakAuras you know, running on WoW Forever (client 1.60.1).
