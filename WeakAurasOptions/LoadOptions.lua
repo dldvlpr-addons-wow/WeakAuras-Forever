@@ -18,6 +18,7 @@ local setAll = OptionsPrivate.commonOptions.CreateSetAll("load", getAll)
 local ValidateNumeric = WeakAuras.ValidateNumeric;
 
 local spellCache = WeakAuras.spellCache;
+local IsPlayerSpell = IsPlayerSpell or function(spell) return C_SpellBook.IsSpellKnown(spell) end
 
 local function CorrectSpellName(input)
   local inputId = tonumber(input)

@@ -16,6 +16,14 @@ local GetShapeshiftFormInfo, GetShapeshiftForm = GetShapeshiftFormInfo, GetShape
 local GetRuneCooldown, UnitCastingInfo, UnitChannelInfo = GetRuneCooldown, UnitCastingInfo, UnitChannelInfo
 local UnitDetailedThreatSituation = UnitDetailedThreatSituation
 local MAX_NUM_TALENTS = MAX_NUM_TALENTS or 20
+local FindBaseSpellByID = FindBaseSpellByID or C_SpellBook.FindBaseSpellByID
+local FindSpellOverrideByID = FindSpellOverrideByID or C_SpellBook.FindSpellOverrideByID
+local IsSpellKnown = IsSpellKnown or function(spell, pet)
+  return C_SpellBook.IsSpellInSpellBook(spell, pet and Enum.SpellBookSpellBank.Pet or Enum.SpellBookSpellBank.Player, false)
+end
+local IsPlayerSpell = IsPlayerSpell or function(spell)
+  return C_SpellBook.IsSpellKnown(spell)
+end
 
 ---@class WeakAuras
 local WeakAuras = WeakAuras
@@ -11578,7 +11586,7 @@ Private.event_prototypes = {
       },
       {
         hidden = true,
-        test = "spellname and IsCurrentSpell(spellname)";
+        test = "spellname and C_Spell.IsCurrentSpell(spellname)";
       },
     },
     iconFunc = function(trigger)

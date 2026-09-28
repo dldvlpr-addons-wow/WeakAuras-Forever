@@ -41,6 +41,7 @@ Profiling.xml
 WeakAuras.lua
 History.lua
 Transmission.lua
+ForeverTutorial.lua
 Modernize.lua
 Animations.lua
 Conditions.lua

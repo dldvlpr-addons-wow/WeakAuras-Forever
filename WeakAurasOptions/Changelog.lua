@@ -10,58 +10,39 @@ local AddonName = ...
 ---@class OptionsPrivate
 local OptionsPrivate = select(2, ...)
 OptionsPrivate.changelog = {
-  versionString = '5.22.0',
-  dateString = '2026-09-05',
-  fullChangeLogUrl = 'https://github.com/WeakAuras/WeakAuras2/compare/5.21.11...5.22.0',
+  versionString = '1.1.0',
+  dateString = '2026-09-28',
+  fullChangeLogUrl = 'https://github.com/dldvlpr-addons-wow/WeakAuras-Forever/blob/main/CHANGES.md',
   highlightText = [==[
-- Security fix and other bug fixes and performance improvements]==],  commitText = [==[InfusOnWoW (1):
+- Combat stability: no more Lua errors when the game hides data in combat (secret values)
+- Cooldowns known before combat still become ready at their end time
+- Target, focus and nameplate tracking no longer errors on hidden unit IDs (instances)
+- New in-game tutorial: /wa tutorial, with two example auras to import]==],  commitText = [==[1.1.0 (2026-09-28):
 
-- Fix counted trigger logic (#6298)
+- Secret values in trigger states are replaced by the last readable value
+- Lua errors caused by secret values inside aura code are no longer reported
+- Spell, charge, item and item slot cooldowns keep their last readable value in combat
+- The GCD ends at its known end time, and every cooldown is checked again when combat ends
+- The unit change tracker and the nameplate target tracker ignore secret unit GUIDs
+- Talent caches no longer require GetNumTalentTabs or GetSpecialization
+- /wa tutorial (or /wa tuto) opens a tutorial window, also reachable from the first login popup
+- TUTORIAL.md: how to create auras on WoW Forever, with ready-to-import examples
 
-NoM0Re (1):
+Known limitations:
 
-- perf: avoid temporary table allocations in aura environment stack
+- Not tested in dungeons and raids yet
+- Combat log triggers never fire: the game forbids the combat log to addons
+- Aura and cooldown data can freeze during combat and update when combat ends
+- Nameplate anchoring only works with the default Blizzard nameplates
 
-Stanzilla (28):
+1.0.2-beta:
 
-- perf: stop idle animation updates
-- docs: require source-based reasoning before changes
-- docs: require evidence for lifecycle guards
-- fix: retain profiling start and stop invariants
-- docs: require per-aura lifecycle checks
-- fix: clean up profiling state when deleting an aura
-- fix: preserve profiling data when renaming an aura
-- docs(agents): reflow the CI paragraph in Validation
-- fix: delete repository substores by archive ID
-- docs(tests): state that the sandbox tests are regression tests
-- style(tests): trim comments and defensive guards
-- docs(agents): document the sandbox tests
-- ci: run the sandbox tests on pull requests
-- test(sandbox): add sandbox tests that run outside WoW
-- docs(agents): do not comment every change site
-- style: remove repeated comments from the sandbox fixes
-- fix(options): load custom code error check through the sandbox
-- fix(sandbox): resolve dotted global names through the aura sandbox
-- fix(options): use unique new button frame names
-- revert: remove Midnight warning (#6301)
-- docs: add repository agent guide (#6300)
-- fix: preserve progress texture mirror state (#6297)
-- fix: broken transaction on a empty value
-- fix: reset progress texture mirror state (#6285)
-- fix: mark increasing warning severity as mixed
-- fix: make aura warning severity deterministic
-- fix: avoid mutating tables during serialization
-- fix: detect mixed group squelch values
+- Loss of Control and Queued Action triggers use the new spell API
+- First login popup lists what works on WoW Forever
 
-dependabot[bot] (2):
+1.0:
 
-- Bump nearform-actions/github-action-notify-twitter from 1.2.3 to 1.2.4
-- Bump nearform-actions/github-action-notify-twitter from 1.2.3 to 1.2.4
-
-github-actions[bot] (2):
-
-- Update WeakAurasModelPaths from wago.tools (#6302)
-- Update WeakAurasModelPaths from wago.tools (#6282)
+- First release of WeakAuras 5.22.0 for WoW Forever 1.60.1 (interface 16001)
 
 ]==]
 }

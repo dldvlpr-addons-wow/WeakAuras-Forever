@@ -161,7 +161,14 @@ local function UnitExistsFixed(unit)
   if #unit > 9 and unit:sub(1, 9) == "nameplate" then
     return nameplateExists[unit] or false
   end
-  return UnitExists(unit) and UnitGUID(unit) or false
+  if not UnitExists(unit) then
+    return false
+  end
+  local guid = UnitGUID(unit)
+  if Private.IsSecret(guid) then
+    return true
+  end
+  return guid or false
 end
 
 local function UnitIsVisibleFixed(unit)

@@ -426,6 +426,19 @@ WeakAuras.BuildInfo = select(4, GetBuildInfo())
 
 Private.hasCombatLog = not (C_DamageMeter or issecretvalue or (C_CombatLog and C_CombatLog.SetFilteredEventsEnabled))
 
+local issecretvalue = issecretvalue
+function Private.IsSecret(...)
+  if not issecretvalue then
+    return false
+  end
+  for i = 1, select("#", ...) do
+    if issecretvalue((select(i, ...))) then
+      return true
+    end
+  end
+  return false
+end
+
 ---@return boolean result
 function WeakAuras.IsClassicEra()
   return flavor == 1

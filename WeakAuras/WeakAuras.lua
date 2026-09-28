@@ -17,7 +17,7 @@ local UnitClass, UnitExists, UnitGUID, UnitAffectingCombat, GetInstanceInfo, IsI
 local UnitIsUnit, GetRaidRosterInfo, GetSpecialization, UnitInVehicle, UnitHasVehicleUI
   = UnitIsUnit, GetRaidRosterInfo, GetSpecialization, UnitInVehicle, UnitHasVehicleUI
 local SendChatMessage, UnitInBattleground, UnitInRaid, UnitInParty, GetTime
-  = SendChatMessage, UnitInBattleground, UnitInRaid, UnitInParty, GetTime
+  = SendChatMessage or C_ChatInfo.SendChatMessage, UnitInBattleground, UnitInRaid, UnitInParty, GetTime
 local CreateFrame, IsShiftKeyDown, GetScreenWidth, GetScreenHeight, GetCursorPosition, UpdateAddOnCPUUsage, GetFrameCPUUsage, debugprofilestop
   = CreateFrame, IsShiftKeyDown, GetScreenWidth, GetScreenHeight, GetCursorPosition, UpdateAddOnCPUUsage, GetFrameCPUUsage, debugprofilestop
 local debugstack = debugstack
@@ -104,6 +104,9 @@ do
   local currentErrorHandlerUid
   local currentErrorHandlerContext
   local function waErrorHandler(errorMessage)
+    if type(errorMessage) == "string" and errorMessage:find("a secret %a* ?value") then
+      return
+    end
     local juicedMessage = {}
     local data
     if currentErrorHandlerId then
@@ -177,6 +180,7 @@ function Private.PrintHelp()
   print(L["Usage:"])
   print(L["/wa help - Show this message"])
   print(L["/wa minimap - Toggle the minimap icon"])
+  print("/wa tutorial - How to create auras on WoW Forever, with two examples")
   print(L["/wa pstart - Start profiling. Optionally include a duration in seconds after which profiling automatically stops. To profile the next combat/encounter, pass a \"combat\" or \"encounter\" argument."])
   print(L["/wa pstop - Finish profiling"])
   print(L["/wa pprint - Show the results from the most recent profiling"])
@@ -206,6 +210,8 @@ function SlashCmdList.WEAKAURAS(input)
     WeakAuras.CancelScheduledProfile()
   elseif msg == "pshow" or msg == "profiling" then
     WeakAurasProfilingFrame:Toggle()
+  elseif msg == "tutorial" or msg == "tuto" then
+    Private.ShowForeverTutorial()
   elseif msg == "minimap" then
     WeakAuras.ToggleMinimap();
   elseif msg == "help" then
@@ -987,7 +993,7 @@ local function CreateTalentCache()
   Private.talent_types_specific[player_class] = Private.talent_types_specific[player_class] or {};
 
   if WeakAuras.IsClassicOrCata() then
-    for tab = 1, GetNumTalentTabs() do
+    for tab = 1, GetNumTalentTabs and GetNumTalentTabs() or 0 do
       for num_talent = 1, GetNumTalents(tab) do
         local talentName, talentIcon = Private.ExecEnv.GetTalentInfo(tab, num_talent);
         local talentId = (tab - 1) * MAX_NUM_TALENTS + num_talent
@@ -1018,7 +1024,7 @@ end
 
 local function CreatePvPTalentCache()
   local _, player_class = UnitClass("player")
-  local spec = GetSpecialization()
+  local spec = GetSpecialization and GetSpecialization()
 
   if (not player_class or not spec) then
     return;
@@ -1410,6 +1416,9 @@ loadedFrame:SetScript("OnEvent", function(self, event, ...)
     end
     if dbIsValid then
       Private.Login(takeNewSnapshots)
+      if not db.foreverDisclaimerSeen then
+        StaticPopup_Show("WEAKAURAS_FOREVER_DISCLAIMER")
+      end
     else
       -- db isn't valid. Request permission to run repair tool before logging in
       StaticPopup_Show("WEAKAURAS_CONFIRM_REPAIR", nil, nil, {reason = "downgrade"})
@@ -2449,6 +2458,34 @@ local function RepairDatabase()
   end)
   Private.Threads:Add("repair", coro, 'urgent')
 end
+
+StaticPopupDialogs["WEAKAURAS_FOREVER_DISCLAIMER"] = {
+  text = "|cff00ccffWeakAuras Forever|r\n\n"
+    .. "WoW Forever runs on the modern game engine (12.x). The game limits what addons can do, "
+    .. "so many Classic auras need changes.\n\n"
+    .. "|cffffcc00Not possible or limited:|r\n"
+    .. "- Combat log triggers never fire: the game closes the combat log to addons.\n"
+    .. "- During combat, the game can hide combat data (buffs, casts, cooldowns) from addons. "
+    .. "Buff and debuff triggers then keep their last state and update when combat ends.\n"
+    .. "- The swing timer does not reset on melee hits.\n"
+    .. "- Talent load options are empty. Type spell IDs instead of spell names.\n"
+    .. "- The \"Chat Message\" action may not send in instances or during combat.\n\n"
+    .. "Type |cffffd100/wa tutorial|r to learn how to create auras that work here.\n\n"
+    .. "Report other problems on the addon page.",
+  button1 = OKAY,
+  button2 = "Tutorial",
+  OnCancel = function(_, _, reason)
+    if reason == "clicked" then
+      Private.ShowForeverTutorial()
+    end
+  end,
+  OnShow = function()
+    db.foreverDisclaimerSeen = true
+  end,
+  timeout = 0,
+  whileDead = true,
+  hideOnEscape = true,
+}
 
 StaticPopupDialogs["WEAKAURAS_CONFIRM_REPAIR"] = {
   text = "",
@@ -5031,6 +5068,25 @@ function Private.SendDelayedWatchedTriggers()
   end
 end
 
+local lastReadableState = setmetatable({}, { __mode = "k" })
+local function ScrubSecretState(state)
+  if not issecretvalue then
+    return
+  end
+  local last = lastReadableState[state]
+  if not last then
+    last = {}
+    lastReadableState[state] = last
+  end
+  for key, value in pairs(state) do
+    if issecretvalue(value) then
+      state[key] = last[key]
+    else
+      last[key] = value
+    end
+  end
+end
+
 function Private.UpdatedTriggerState(id)
   if (not triggerState[id]) then
     return;
@@ -5059,6 +5115,7 @@ function Private.UpdatedTriggerState(id)
       state.id = id;
 
       if (state.changed) then
+        ScrubSecretState(state)
         startStopTimers(triggerState[id][triggernum], id, cloneId, triggernum);
       end
       anyStateShown = true
@@ -5094,12 +5151,14 @@ function Private.UpdatedTriggerState(id)
   if (not next(activeTriggerState)) then
     if (show) then
       activeTriggerState = CreateFallbackState(id, newActiveTrigger)
+      ScrubSecretState(activeTriggerState[""])
     else
       activeTriggerState = emptyState;
     end
   elseif (show) then
     if not next(activeTriggerState) then
       activeTriggerState = CreateFallbackState(id, newActiveTrigger)
+      ScrubSecretState(activeTriggerState[""])
     end
   end
   triggerState[id].activeStates = activeTriggerState

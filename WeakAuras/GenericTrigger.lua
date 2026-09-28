@@ -59,6 +59,7 @@ local CombatLogGetCurrentEventInfo = CombatLogGetCurrentEventInfo;
 
 -- WoW APIs
 local IsPlayerMoving = IsPlayerMoving
+local FindSpellOverrideByID = FindSpellOverrideByID or C_SpellBook.FindSpellOverrideByID
 
 ---@class WeakAuras
 local WeakAuras = WeakAuras;
@@ -479,6 +480,9 @@ local function RunOverlayFuncs(event, state, id, errorHandler)
     state.additionalProgress[i] = state.additionalProgress[i] or {};
     local additionalProgress = state.additionalProgress[i];
     local ok, a, b, c = xpcall(overlayFunc, errorHandler or Private.GetErrorHandlerId(id, L["Overlay %s"]:format(i)), event.trigger, state);
+    if ok and Private.IsSecret(a, b, c) then
+      ok = false
+    end
     if (not ok) then
       additionalProgress.min = nil;
       additionalProgress.max = nil;
@@ -2320,7 +2324,7 @@ do
         modRate = spellCooldownInfo.modRate
       end
       local shootInfo = C_Spell.GetSpellCooldown(5019)
-      if shootInfo then
+      if shootInfo and not Private.IsSecret(shootInfo.startTime, shootInfo.duration) then
         shootStart = shootInfo.startTime
         shootDuration = shootInfo.duration
       end
@@ -2331,6 +2335,12 @@ do
         duration = spellCooldownInfo.duration
         modRate = spellCooldownInfo.modRate
       end
+    end
+    if Private.IsSecret(startTime, duration, modRate) then
+      if gcdStart and GetTime() < gcdStart + gcdDuration then
+        return
+      end
+      startTime, duration, modRate = 0, 0, nil
     end
     if(duration and duration > 0) then
       if not(gcdStart) then
@@ -2392,6 +2402,14 @@ do
       return self.remainingTime[id], self.duration[id], true, self.readyTime[id], self.modRate[id] or 1.0
     end
     return 0, 0, nil, nil, 1.0
+  end
+
+  local function KnownCooldown(handler, id)
+    local expirationTime, duration = handler.expirationTime[id], handler.duration[id]
+    if expirationTime and duration and expirationTime ~= 0 then
+      return expirationTime - duration, duration, handler.modRate[id]
+    end
+    return 0, 0, handler.modRate[id]
   end
 
   local function HandleSpell(self, id, startTime, duration, modRate, paused)
@@ -2584,6 +2602,9 @@ do
             startTimeCooldown, durationCooldown, cooldownBecauseRune, startTimeCharges, durationCharges,
             spellCount, unifiedModRate, modRate, modRateCharges, paused
             = WeakAuras.GetSpellCooldownUnified(effectiveSpellId, GetRuneDuration());
+      if charges == false then
+        return
+      end
 
       spellDetail.charges = charges
       spellDetail.chargesMax = maxCharges
@@ -2698,6 +2719,14 @@ do
       local time = GetTime();
 
       local spellDetail = self.data[effectiveSpellId]
+
+      if charges == false then
+        charges, maxCharges, spellCount = spellDetail.charges, spellDetail.chargesMax, spellDetail.count
+        startTime, duration, unifiedModRate = KnownCooldown(self.spellCds, effectiveSpellId)
+        startTimeCooldown, durationCooldown, modRate = KnownCooldown(self.spellCdsOnlyCooldown, effectiveSpellId)
+        startTimeCharges, durationCharges, modRateCharges = KnownCooldown(self.spellCdsCharges, effectiveSpellId)
+        unifiedCooldownBecauseRune, cooldownBecauseRune, paused = true, true, false
+      end
 
       local chargesChanged = spellDetail.charges ~= charges or spellDetail.count ~= spellCount
                             or spellDetail.chargesMax ~= maxCharges
@@ -2864,6 +2893,7 @@ do
     cdReadyFrame:RegisterEvent("SPELLS_CHANGED");
     cdReadyFrame:RegisterEvent("PLAYER_ENTERING_WORLD");
     cdReadyFrame:RegisterEvent("PLAYER_LEAVING_WORLD")
+    cdReadyFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     if WeakAuras.IsWrathOrCata() then
       cdReadyFrame:RegisterEvent("RUNE_POWER_UPDATE");
       cdReadyFrame:RegisterEvent("RUNE_TYPE_UPDATE");
@@ -2884,7 +2914,7 @@ do
         cdReadyFrame:Show()
         return
       end
-      if (event == "ACTIONBAR_UPDATE_COOLDOWN") then
+      if (event == "ACTIONBAR_UPDATE_COOLDOWN" or event == "PLAYER_REGEN_ENABLED") then
         mark_ACTIONBAR_UPDATE_COOLDOWN = true
         cdReadyFrame:Show()
         return
@@ -2916,6 +2946,9 @@ do
         local spellId = nil
         if event == "SPELL_UPDATE_COOLDOWN" then
           local arg1, baseSpellID, category = ...
+          if Private.IsSecret(arg1, category) then
+            arg1, category = nil, nil
+          end
           if arg1 and type(arg1) == "number" then
             spellId = arg1
           end
@@ -2934,6 +2967,9 @@ do
           end
         elseif event == "SPELL_UPDATE_USES" then
           local arg1 = ...
+          if Private.IsSecret(arg1) then
+            arg1 = nil
+          end
           if arg1 and type(arg1) == "number" then
             spellId = arg1
           end
@@ -3099,9 +3135,9 @@ do
   ---@param identifier string | number
   ---@return number? startTime, number? duration
   function WeakAuras.GetSpellLossOfControlCooldown(identifier)
-    if WeakAuras.IsTWW() then
+    if C_Spell.GetSpellLossOfControlCooldown then
       return C_Spell.GetSpellLossOfControlCooldown(identifier)
-    else
+    elseif GetSpellLossOfControlCooldown then
       return GetSpellLossOfControlCooldown(identifier)
     end
   end
@@ -3301,6 +3337,11 @@ do
 
     local charges, maxCharges, startTimeCharges, durationCharges, modRateCharges = GetSpellCharges(id);
 
+    if Private.IsSecret(startTimeCooldown, durationCooldown, enabled, modRate,
+                        charges, maxCharges, startTimeCharges, durationCharges, modRateCharges) then
+      return false
+    end
+
     startTimeCooldown = startTimeCooldown or 0;
     durationCooldown = durationCooldown or 0;
 
@@ -3387,6 +3428,11 @@ do
   ---@type fun(id)
   function Private.CheckItemCooldown(id)
     local startTime, duration, enabled = C_Container.GetItemCooldown(id);
+    if Private.IsSecret(startTime, duration, enabled) then
+      duration = itemCdDurs[id] or 0
+      startTime = (itemCdExps[id] or 0) - duration
+      enabled = itemCdEnabled[id]
+    end
     -- TODO: In 10.2.6 the apis return values changed from 1,0 for enabled to true, false
     -- We should adjust once its on all versions
     if enabled == false then
@@ -3462,6 +3508,11 @@ do
 
   function Private.CheckItemSlotCooldown(id, itemId)
     local startTime, duration, enable = GetInventoryItemCooldown("player", id);
+    if Private.IsSecret(startTime, duration, enable) then
+      duration = itemSlotsCdDurs[id] or 0
+      startTime = (itemSlotsCdExps[id] or 0) - duration
+      enable = itemSlotsEnable[id]
+    end
     itemSlotsEnable[id] = enable;
     startTime = startTime or 0;
     duration = duration or 0;
@@ -3564,12 +3615,7 @@ do
     end
   end
 
-  local GetOverrideSpell
-  if WeakAuras.IsTWW() then
-    GetOverrideSpell = C_Spell.GetOverrideSpell
-  else
-    GetOverrideSpell = FindSpellOverrideByID
-  end
+  local GetOverrideSpell = WeakAuras.IsTWW() and C_Spell.GetOverrideSpell or FindSpellOverrideByID
 
   function Private.ExecEnv.GetEffectiveSpellId(spellId, exactMatch, followoverride)
     if type(spellId) == "string" then
@@ -3615,6 +3661,9 @@ do
       -- TODO: In 10.2.6 the apis return values changed from 1,0 for enabled to true, false
       -- We should adjust once its on all versions
       local startTime, duration, enabled = C_Container.GetItemCooldown(id);
+      if Private.IsSecret(startTime, duration, enabled) then
+        startTime, duration, enabled = 0, 0, 1
+      end
       if (duration == 0) then
         enabled = 1;
       end
@@ -3645,6 +3694,9 @@ do
     if not(itemSlots[id]) then
       itemSlots[id] = GetInventoryItemID("player", id)
       local startTime, duration, enable = GetInventoryItemCooldown("player", id);
+      if Private.IsSecret(startTime, duration, enable) then
+        startTime, duration, enable = 0, 0, 1
+      end
       itemSlotsEnable[id] = enable;
 
       if(duration > 0 and duration > 1.5 and duration ~= WeakAuras.gcdDuration()) then
@@ -3859,7 +3911,13 @@ function WeakAuras.WatchUnitChange(unit)
         local fn
         for i = 1, select("#", ...) do
           fn = select(i, ...)
-          fn(unit, eventsToSend)
+          local ok, err = pcall(fn, unit, eventsToSend)
+          if not ok then
+            eventsToSend["UNIT_CHANGED_" .. unit] = unit
+            if not (type(err) == "string" and err:find("secret", 1, true)) then
+              geterrorhandler()(err)
+            end
+          end
         end
       end
     end
@@ -3957,8 +4015,11 @@ function WeakAuras.WatchUnitChange(unit)
     return
   end
   local guid = UnitGUID(unit)
+  if Private.IsSecret(guid) then
+    guid = nil
+  end
   watchUnitChange.trackedUnits[unit] = true
-  watchUnitChange.unitIdToGUID[unit] = WeakAuras.UnitExistsFixed(unit) and UnitGUID(unit)
+  watchUnitChange.unitIdToGUID[unit] = WeakAuras.UnitExistsFixed(unit) and guid
   watchUnitChange.unitExists[unit] = UnitExists(unit)
 
   if guid then
@@ -4413,7 +4474,8 @@ do
 
   local function nameplateTargetOnEvent(self, event, unit)
     if event == "NAME_PLATE_UNIT_ADDED" then
-      nameplateTargets[unit] = UnitGUID(unit.."-target") or true
+      local targetGUID = UnitGUID(unit.."-target")
+      nameplateTargets[unit] = not Private.IsSecret(targetGUID) and targetGUID or true
     elseif event == "NAME_PLATE_UNIT_REMOVED" then
       nameplateTargets[unit] = nil
     end
@@ -4426,6 +4488,9 @@ do
     if throttle_update < 0 then
       for unit, targetGUID in pairs(nameplateTargets) do
         local newTargetGUID = UnitGUID(unit.."-target")
+        if Private.IsSecret(newTargetGUID) then
+          newTargetGUID = targetGUID
+        end
         if (newTargetGUID == nil and targetGUID ~= true)
         or (newTargetGUID ~= nil and targetGUID ~= newTargetGUID)
         then
