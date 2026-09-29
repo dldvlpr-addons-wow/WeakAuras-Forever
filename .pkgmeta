@@ -10,6 +10,7 @@ move-folders:
 ignore:
   - README.md
   - CHANGES.md
+  - DESCRIPTION.md
   - LICENSE
   - TakenDamage_Forever.txt
   - TUTORIAL.md

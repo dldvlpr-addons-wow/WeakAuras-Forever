@@ -2425,6 +2425,31 @@ function Private.GetCooldownManagerAuraSpellIDs(cooldownID)
   return spellIDs
 end
 
+local function FirstSecret(value, total)
+  if Private.IsSecret(value) then
+    return true, value
+  elseif Private.IsSecret(total) then
+    return true, total
+  end
+  return false
+end
+
+Private.ExecEnv.PercentOrSecret = function(value, total)
+  local isSecret, secret = FirstSecret(value, total)
+  if isSecret then
+    return secret
+  end
+  return total ~= 0 and value / total * 100 or nil
+end
+
+Private.ExecEnv.DeficitOrSecret = function(value, total)
+  local isSecret, secret = FirstSecret(value, total)
+  if isSecret then
+    return secret
+  end
+  return total - value
+end
+
 Private.event_prototypes = {
   ["Unit Characteristics"] = {
     type = "unit",
@@ -2740,7 +2765,7 @@ Private.event_prototypes = {
         type = "string",
         multiline = true,
         store = true,
-        init = "select(6, strsplit('-', UnitGUID(unit) or ''))",
+        init = "not Private.ExecEnv.IsSecret(UnitGUID(unit)) and select(6, strsplit('-', UnitGUID(unit) or '')) or nil",
         conditionType = "string",
         preamble = "local npcIdChecker = Private.ExecEnv.ParseStringCheck(%q)",
         test = "npcIdChecker:Check(npcId)",
@@ -2965,7 +2990,7 @@ Private.event_prototypes = {
         name = "percentRep",
         display = L["Reputation (%)"],
         type = "number",
-        init = "not Private.ExecEnv.IsSecret(value, total) and total ~= 0 and (value / total) * 100 or nil",
+        init = "Private.ExecEnv.PercentOrSecret(value, total)",
         store = true,
         conditionType = "number",
         noProgressSource = true,
@@ -3222,7 +3247,7 @@ Private.event_prototypes = {
         name = "percentXP",
         display = L["Experience (%)"],
         type = "number",
-        init = "not Private.ExecEnv.IsSecret(value, total) and total ~= 0 and (value / total) * 100 or nil",
+        init = "Private.ExecEnv.PercentOrSecret(value, total)",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -3289,7 +3314,7 @@ Private.event_prototypes = {
     events = function(trigger)
       local unit = trigger.unit
       local result = {}
-      if WeakAuras.IsClassicOrTBCOrWrath() then
+      if WeakAuras.IsClassicOrTBCOrWrath() and Private.hasCombatLog then
         AddUnitEventForEvents(result, unit, "UNIT_HEALTH_FREQUENT")
       else
         AddUnitEventForEvents(result, unit, "UNIT_HEALTH")
@@ -3396,7 +3421,7 @@ Private.event_prototypes = {
         name = "percenthealth",
         display = L["Health (%)"],
         type = "number",
-        init = "not Private.ExecEnv.IsSecret(value, total) and total ~= 0 and (value / total) * 100 or nil",
+        init = "Private.ExecEnv.PercentOrSecret(value, total)",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -3409,7 +3434,7 @@ Private.event_prototypes = {
         name = "deficit",
         display = L["Health Deficit"],
         type = "number",
-        init = "not Private.ExecEnv.IsSecret(value, total) and total - value or nil",
+        init = "Private.ExecEnv.DeficitOrSecret(value, total)",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -3569,7 +3594,7 @@ Private.event_prototypes = {
         type = "string",
         multiline = true,
         store = true,
-        init = "select(6, strsplit('-', UnitGUID(unit) or ''))",
+        init = "not Private.ExecEnv.IsSecret(UnitGUID(unit)) and select(6, strsplit('-', UnitGUID(unit) or '')) or nil",
         conditionType = "string",
         preamble = "local npcIdChecker = Private.ExecEnv.ParseStringCheck(%q)",
         test = "npcIdChecker:Check(npcId)",
@@ -4097,7 +4122,7 @@ Private.event_prototypes = {
         name = "percentpower",
         display = L["Power (%)"],
         type = "number",
-        init = "not Private.ExecEnv.IsSecret(value, total) and total ~= 0 and (value / total) * 100 or nil",
+        init = "Private.ExecEnv.PercentOrSecret(value, total)",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -4110,7 +4135,7 @@ Private.event_prototypes = {
         name = "deficit",
         display = L["Power Deficit"],
         type = "number",
-        init = "not Private.ExecEnv.IsSecret(value, total) and total - value or nil",
+        init = "Private.ExecEnv.DeficitOrSecret(value, total)",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -4175,7 +4200,7 @@ Private.event_prototypes = {
         type = "string",
         multiline = true,
         store = true,
-        init = "select(6, strsplit('-', UnitGUID(unit) or ''))",
+        init = "not Private.ExecEnv.IsSecret(UnitGUID(unit)) and select(6, strsplit('-', UnitGUID(unit) or '')) or nil",
         conditionType = "string",
         preamble = "local npcIdChecker = Private.ExecEnv.ParseStringCheck(%q)",
         test = "npcIdChecker:Check(npcId)",
@@ -9599,7 +9624,7 @@ Private.event_prototypes = {
         type = "string",
         multiline = true,
         store = true,
-        init = "select(6, strsplit('-', UnitGUID(unit) or ''))",
+        init = "not Private.ExecEnv.IsSecret(UnitGUID(unit)) and select(6, strsplit('-', UnitGUID(unit) or '')) or nil",
         conditionType = "string",
         preamble = "local npcIdChecker = Private.ExecEnv.ParseStringCheck(%q)",
         test = "npcIdChecker:Check(npcId)",
@@ -10117,7 +10142,7 @@ Private.event_prototypes = {
         type = "string",
         multiline = true,
         store = true,
-        init = "select(6, strsplit('-', UnitGUID(unit) or ''))",
+        init = "not Private.ExecEnv.IsSecret(UnitGUID(unit)) and select(6, strsplit('-', UnitGUID(unit) or '')) or nil",
         conditionType = "string",
         preamble = "local npcIdChecker = Private.ExecEnv.ParseStringCheck(%q)",
         test = "npcIdChecker:Check(npcId)",
@@ -12741,7 +12766,7 @@ if WeakAuras.IsClassicEra() then
         end
       end
     end
-    return lowest, maximum > 0 and current / maximum * 100 or 100, broken
+    return math.floor(lowest), maximum > 0 and math.floor(current / maximum * 100) or 100, broken
   end
 
   Private.event_prototypes["Equipment Durability"] = {
@@ -12856,7 +12881,7 @@ if WeakAuras.IsClassicEra() then
     init = function(trigger)
       return [[
         local role = UnitGroupRolesAssigned("player")
-        if Private.IsSecret(role) or role == "NONE" then
+        if Private.ExecEnv.IsSecret(role) or role == "NONE" then
           role = nil
         end
       ]]

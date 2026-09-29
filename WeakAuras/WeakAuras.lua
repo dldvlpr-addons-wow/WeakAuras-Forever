@@ -180,7 +180,7 @@ function Private.PrintHelp()
   print(L["Usage:"])
   print(L["/wa help - Show this message"])
   print(L["/wa minimap - Toggle the minimap icon"])
-  print("/wa tutorial - How to create auras on WoW Forever, with two examples")
+  print("/wa tutorial - Guide: learn everything about WeakAuras on WoW Forever, with auras to import")
   if C_CooldownViewer then
     print("/wa cdm - Show or hide the Blizzard Cooldown Manager")
   end
@@ -2496,10 +2496,10 @@ StaticPopupDialogs["WEAKAURAS_FOREVER_DISCLAIMER"] = {
     .. "- The swing timer does not reset on melee hits.\n"
     .. "- Talent load options are empty. Type spell IDs instead of spell names.\n"
     .. "- The \"Chat Message\" action may not send in instances or during combat.\n\n"
-    .. "Type |cffffd100/wa tutorial|r to learn how to create auras that work here.\n\n"
+    .. "Click |cffffd100Guide|r below, or the Guide button in |cffffd100/wa|r, to learn everything about WeakAuras here.\n\n"
     .. "Report other problems on the addon page.",
   button1 = OKAY,
-  button2 = "Tutorial",
+  button2 = "Guide",
   OnCancel = function(_, _, reason)
     if reason == "clicked" then
       Private.ShowForeverTutorial()

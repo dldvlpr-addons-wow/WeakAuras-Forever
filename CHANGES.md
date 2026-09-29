@@ -159,6 +159,27 @@ This file lists every file changed from the upstream 5.22.0 release, as required
   when the restriction ends. `WeakAuras/ForeverAurasImport.lua`: the native filters of Blizzard Aura triggers are
   converted, and their own auras filter becomes the native one.
   TimelineParser Stage triggers are listed as not converted, like TimelineParser Timer ones.
+- `TUTORIAL.md`: sections 2 and 3 rewritten from the in-game tests (tested, limited, not tested, not working),
+  notes on the boss timeline, custom code and the ForeverAuras Native Filter.
+- `WeakAuras/ForeverTutorial.lua`: the tutorial window becomes the full guide, generated from `TUTORIAL.md` (all
+  sections, code examples, and import buttons for the DoT timer, the nameplate DoT timer and the pre-pull
+  checklist). The window is larger, and hides when an import button is clicked so the import dialog is visible.
+- `WeakAurasOptions/OptionsFrames/OptionsFrame.lua`: a "Guide: learn WeakAuras" button in the title bar of the
+  `/wa` window opens the guide, with a tooltip that describes it. `WeakAuras/WeakAuras.lua`: the `/wa` help line
+  and the first login popup point to the guide.
+
+### Fixed
+- `WeakAuras/Prototypes.lua`: the Role trigger checks secret roles with `Private.ExecEnv.IsSecret`, available to
+  the generated trigger code. The Npc ID of the unit triggers (Unit Characteristics, Health, Power, Threat Situation, Cast) is
+  `nil` when the unit GUID is secret, instead of failing the trigger: an Npc ID filter then hides the aura.
+  The Health trigger listens to `UNIT_HEALTH`, since the engine has no `UNIT_HEALTH_FREQUENT` (its health bar did
+  not move in combat). The percent and deficit of the Health, Power, Faction Reputation and Experience triggers
+  (`Private.ExecEnv.PercentOrSecret`, `Private.ExecEnv.DeficitOrSecret`) stay secret when their value is, so that
+  `WeakAuras/WeakAuras.lua` keeps their last readable value, and a "Health < 50%" condition keeps its last state in
+  combat instead of turning false. The Equipment Durability percentages are rounded down to whole numbers, so "below N" thresholds are unchanged.
+- `WeakAuras/SubRegionTypes/SubText.lua`: while a progress value is secret, a text made only of `%p`, `%t` and
+  plain text (for example `%p / %t`) is drawn from the secret value and total, unformatted, without raid marks or
+  line breaks.
 
 ## 2026-09-28
 
@@ -241,7 +262,14 @@ Forever only: files that no other client flavor needs here.
 
 - Combat log triggers (`CLEU:...`, "Combat Log" event) never fire: the engine forbids the combat log to addons.
   Damage taken is available through `UNIT_COMBAT:player`.
-- Aura triggers freeze during combat when aura data is secret, and update when combat ends.
+- Aura triggers freeze during combat when aura data is secret, and update when combat ends. The `C_UnitAuras`
+  calls of the restricted path (`GetAuraDuration`, `GetAuraApplicationDisplayCount`, `GetUnitAuraInstanceIDs`,
+  `GetAuraDataByAuraInstanceID`) fail for addon code in combat ("Auras cannot be accessed when secret while
+  tainted", confirmed in game for `GetAuraDuration` and `GetUnitAuraInstanceIDs`): stacks stay frozen, and a buff
+  cast by someone else does not reset its timer. `WeakAuras/BuffTrigger2.lua`: during the restriction,
+  `UNIT_SPELLCAST_SUCCEEDED` on `player` resets the timer of a buff on the player cast by the player with the same
+  spell ID, to its last readable duration, whatever the target of the cast (the event does not give it). Only
+  triggers on the Player unit. A buff first applied during combat is still only seen when combat ends.
 - The swing timer does not reset on melee hits (it used the combat log).
 - Spell and item cooldowns are frozen in combat when they are secret. A cooldown known before combat still becomes
   ready at its end time, but a cooldown started in combat is only seen when combat ends. An aura loaded during

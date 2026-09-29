@@ -43,20 +43,20 @@ Tape chaque commande et note le résultat affiché.
 ## Étape 2 : 🔴 le combat de base (15 min, sur n'importe quel mob)
 
 ### 2.1 Icône de cooldown en combat
-- [ ] Crée une aura Icon, trigger **Cooldown** sur un de tes sorts (ID exact).
-- [ ] Hors combat : lance le sort, le cadran tourne et le chiffre descend.
-- [ ] En combat : pareil, sans erreur. **Risque n°1** : si une erreur parle de `SetCooldown` ou de fonction protégée, note-la en entier.
+- [ok ] Crée une aura Icon, trigger **Cooldown** sur un de tes sorts (ID exact).
+- [ ok] Hors combat : lance le sort, le cadran tourne et le chiffre descend.
+- [ ok] En combat : pareil, sans erreur. **Risque n°1** : si une erreur parle de `SetCooldown` ou de fonction protégée, note-la en entier.
 
 ### 2.2 Buff posé en combat
-- [ ] Aura Icon, trigger **Aura**, sur toi, un buff que tu te poses (spell ID exact).
+- [ ok] Aura Icon, trigger **Aura**, sur toi, un buff que tu te poses (spell ID exact).
 - [ ] Ajoute un texte `%p` et un texte `%s`.
-- [ ] Hors combat : icône, durée qui descend, stacks.
-- [ ] Pose le buff **en combat** : l'icône apparaît, `%p` descend, `%s` montre les stacks.
-- [ ] À la fin du combat, l'aura reste juste (pas de doublon, pas de figé).
+- [partiel ] Hors combat : icône, durée qui descend, stacks.
+- [ok, corrigé] Pose le buff **en combat** : l'icône apparaît, `%p` descend, `%s` montre les stacks. Relance en combat de ton propre buff : minuteur remis à zéro (option B). Stacks figés en combat : limite du moteur, notée dans TUTORIAL.md.
+- [ok] À la fin du combat, l'aura reste juste (pas de doublon, pas de figé).
 
 ### 2.3 Barre de vie et de mana en combat
-- [ ] Aura Progress Bar, trigger **Health** sur `target`, puis une autre **Power** sur `player`.
-- [ ] En combat, les deux barres bougent.
+- [ok] Aura Progress Bar, trigger **Health** sur `target`, puis une autre **Power** sur `player`.
+- [ok, corrigé : UNIT_HEALTH, texte %p / %t natif] En combat, les deux barres bougent.
 - [ ] Ajoute une condition « Health < 50 % » : elle garde son dernier état en combat (attendu), et se remet à jour à la fin.
 
 ### 2.4 Global Cooldown
@@ -67,12 +67,12 @@ Tape chaque commande et note le résultat affiché.
 
 ## Étape 3 : armes, munitions, enchantements (10 min)
 
-- [ ] **Swing Timer, main hand** : la barre repart à chaque coup.
+- [ok ] **Swing Timer, main hand** : la barre repart à chaque coup.
 - [ ] **Off hand** (si deux armes) : barre séparée, juste après un buff de vitesse d'attaque.
 - [ ] **Ranged / baguette** : la barre suit le tir automatique.
 - [ ] **Swing Timer, Target In Range** : réglé sur In Range, l'aura s'affiche au corps à corps ; sur Out of Range, loin de la cible ; sans cible, ni l'un ni l'autre.
 - [ ] **Ammo** (chasseur, guerrier, voleur) : Count = munitions équipées, Total Carried = toutes les munitions des sacs ; le filtre d'objet Ammo Item ne montre l'aura qu'avec la munition choisie.
-- [ ] **Enchantement temporaire** (poison, pierre à aiguiser, huile) : sur les deux armes, les deux s'affichent avec leur durée.
+- [ok ] **Enchantement temporaire** (poison, pierre à aiguiser, huile) : sur les deux armes, les deux s'affichent avec leur durée.
 
 ---
 
@@ -87,24 +87,24 @@ Tape chaque commande et note le résultat affiché.
 
 ## Étape 5 : nouveaux triggers et options (15 min)
 
-- [ ] **Bag Space** : ramasse un objet, Free Slots baisse ; Include Specialty Bags compte le carquois.
-- [ ] **Equipment Durability** : meurs une fois, Lowest et Overall baissent ; un seul slot fonctionne.
-- [ ] **Role** : en groupe, choisis un rôle dans la recherche de groupe, l'aura suit.
-- [ ] **Tracking** : Find Herbs par son ID de sort, l'aura suit l'activation ; Inverse fait l'inverse.
-- [ ] **Load, Instance Type** : dans un donjon, la liste des difficultés est remplie et le filtre marche.
+- [ok] **Bag Space** : ramasse un objet, Free Slots baisse ; Include Specialty Bags compte le carquois.
+- [ko ] **Equipment Durability** : meurs une fois, Lowest et Overall baissent ; un seul slot fonctionne.
+- [ok, corrigé] **Role** : en groupe, choisis un rôle dans la recherche de groupe, l'aura suit.
+- [ko ] **Tracking** : Find Herbs par son ID de sort, l'aura suit l'activation ; Inverse fait l'inverse.
+- [ko ] **Load, Instance Type** : dans un donjon, la liste des difficultés est remplie et le filtre marche.
 - [ ] **Conditions, Secret Restrictions Active** : vrai en combat, faux après.
-- [ ] **Cooldown, condition On Global Cooldown** (avec Show Global Cooldown) + Hide Cooldown Text : le chiffre disparaît pendant le GCD seulement.
-- [ ] **Aura, Elapsed Time ≥ 5** : l'aura s'affiche 5 s après la pose du buff.
+- [ ok] **Cooldown, condition On Global Cooldown** (avec Show Global Cooldown) + Hide Cooldown Text : le chiffre disparaît pendant le GCD seulement.
+- [ ok] **Aura, Elapsed Time ≥ 5** : l'aura s'affiche 5 s après la pose du buff.
 - [ ] **Texte `%p`** : format Old / Modern et Increase Precision Below suivent les réglages, en combat aussi.
 
 ---
 
 ## Étape 6 : Cooldown Manager (5 min)
 
-- [ ] `/wa cdm` hors combat : le Cooldown Manager de Blizzard s'affiche / se cache. En combat : message de refus.
-- [ ] Après `/wa cdm`, aucune erreur « action bloquée » (taint) en combat.
-- [ ] Trigger Cooldown : la liste **From the Cooldown Manager** est remplie et règle le sort.
-- [ ] Trigger Aura (Exact Spell ID coché) : la liste **From the Cooldown Manager** ajoute les ID d'un buff suivi.
+- [ ok] `/wa cdm` hors combat : le Cooldown Manager de Blizzard s'affiche / se cache. En combat : message de refus.
+- [ok ] Après `/wa cdm`, aucune erreur « action bloquée » (taint) en combat.
+- [ok] Trigger Cooldown : la liste **From the Cooldown Manager** est remplie et règle le sort.
+- [ok ] Trigger Aura (Exact Spell ID coché) : la liste **From the Cooldown Manager** ajoute les ID d'un buff suivi.
 
 ### 6.5 Lien Cooldown Manager ↔ aura en combat (décide si on reconnaît un buff secret par son sort)
 
@@ -115,13 +115,17 @@ par son ID de sort un buff posé en combat dont les données sont secrètes (com
    mets 2 ou 3 de tes buffs dans **Tracked Buffs**, dont un qui apparaît en combat (proc, bijou, talent).
 2. [ ] Hors combat, buff actif, colle cette commande (une seule ligne) :
    ```
-   /run for _,v in ipairs({BuffIconCooldownViewer,BuffBarCooldownViewer}) do for _,f in ipairs(v and v:GetItemFrames() or {}) do local i=f:GetAuraSpellInstanceID() local s=f.auraSpellID print(f:GetCooldownID(), type(i), issecretvalue(i) and "SECRET" or i, issecretvalue(s) and "SECRET" or s) end end
+   /run local S=issecretvalue for _,v in ipairs({BuffIconCooldownViewer,BuffBarCooldownViewer})do for _,f in ipairs(v:GetItemFrames())do local c,a,s=f.cooldownID,f.auraInstanceID,f.auraSpellID if c then print(c,S(a)and"S"or a,S(s)and"S"or s)end end end
    ```
-   Note ce qui s'affiche : une ligne par buff suivi (ID d'entrée, type, ID d'instance, ID de sort).
+   Note ce qui s'affiche : une ligne par buff suivi (ID d'entrée, ID d'instance, ID de sort ; S = secret).
 3. [ ] **En combat**, avec le buff posé pendant le combat, recolle la même commande. Note les lignes.
 4. [ ] Toujours en combat, colle :
    ```
    /run local t=C_UnitAuras.GetUnitAuraInstanceIDs("player","HELPFUL") print(#t) for _,i in ipairs(t) do print(i, C_Secrets and C_Secrets.ShouldUnitAuraInstanceBeSecret and C_Secrets.ShouldUnitAuraInstanceBeSecret("player", i)) end
+   3
+25 false
+3 false
+1 false
    ```
    Note si l'ID d'instance vu à l'étape 3 apparaît ici, et si sa ligne dit `true` (aura secrète).
 
@@ -141,7 +145,7 @@ l'étape 4. Si la commande 2 ou 3 affiche une erreur, copie-la en entier.
 
 ---
 
-## Étape 8 : groupe, glow, divers (10 min)
+## Étape 8 : groupe, glow, divers (10 min) bug
 
 - [ ] Action **Glow** (Pixel, Autocast, Proc) sur une icône : le glow est visible et bien dessiné.
 - [ ] Trigger Aura en mode groupe (party) : les membres sont trouvés, pas d'erreur de GUID en combat.
@@ -204,3 +208,79 @@ Ce que je veux :
 4. Mets à jour CHANGES.md et coche dans TESTS-EN-JEU.md ce qui est corrigé.
 5. Donne-moi à la fin la liste des tests à refaire en jeu.
 ```
+
+
+Dump: value=select(4, GetBuildInfo())
+[1]=16001,
+[2]="",
+[3]=" "
+Dump: value=WOW_PROJECT_ID, WOW_PROJECT_MAINLINE
+[1]=1,
+[2]=1
+Dump: value=C_SpecializationInfo and C_SpecializationInfo.GetSpecialization()
+[1]=1
+Dump: value=C_Secrets ~= nil, issecretvalue ~= nil` | `true, true
+Dump: ERROR: [string "return C_Secrets ~= nil, issecretvalue ~= nil` | `true, true"]:1: '<eof>' expected near '`'
+Dump: value=C_Secrets ~= nil, issecretvalue ~= nil` | `true, true`
+Dump: ERROR: [string "return C_Secrets ~= nil, issecretvalue ~= nil` | `true, true`"]:1: '<eof>' expected near '`'
+Dump: value=C_Secrets ~= nil, issecretvalue ~= nil
+[1]=true,
+[2]=true
+Dump: value=C_CooldownViewer ~= nil
+[1]=true
+Dump: value=GetInventoryItemDurability(1)
+empty result
+Dump: value=C_Minimap.GetNumTrackingTypes()
+[1]=23
+Dump: value=GetInstanceInfo()
+[1]="Kalimdor",
+[2]="none",
+[3]=0,
+[4]="",
+[5]=0,
+[6]=0,
+[7]=false,
+[8]=1,
+[9]=0,
+[11]=false
+Dump: value=C_EncounterTimeline and C_EncounterTimeline.IsFeatureAvailable()
+[1]=false
+Dump: value=C_EncounterTimeline and C_EncounterTimeline.IsFeatureEnabled()
+[1]=false
+Dump: value=C_Texture.GetAtlasInfo("RaidFrame-Icon-DebuffMagic") ~= nil
+[1]=true
+
+Total time: 39092.01ms ()
+Time inside WA: 27.32ms (0.88ms)
+Time spent inside WA: 0.07%
+
+Note: Not every aspect of each aura can be tracked.
+You can ask on our discord https://discord.gg/weakauras for help interpreting this output.
+
+Auras:
+Total time attributed to auras: 
+Pre-pull checklist (Forever) 1.38ms, 64.82% (0.19ms)
+Immolate timer (Forever) 0.57ms, 26.87% (0.28ms)
+Low: Soul Shards 0.09ms, 4.35% (0.09ms)
+Missing: Demon Skin / Armor 0.08ms, 3.95% (0.02ms)
+
+Systems:
+bufftrigger2 - OnUpdate 21.35ms, 78.16% (0.03ms)
+load 2.36ms, 8.64% (0.88ms)
+dynamicgroup 1.38ms, 5.06% (0.19ms)
+generictrigger UNIT_SPELLCAST_SUCCEEDED player 0.53ms, 1.95% (0.30ms)
+generictrigger PLAYER_TARGET_DIED 0.14ms, 0.52% (0.14ms)
+generictrigger BAG_UPDATE_DELAYED 0.11ms, 0.39% (0.11ms)
+bufftrigger2 - PLAYER_SOFT_ENEMY_CHANGED 0.09ms, 0.33% (0.04ms)
+bufftrigger2 - PLAYER_TARGET_CHANGED 0.08ms, 0.31% (0.03ms)
+bufftrigger2 - UNIT_FLAGS 0.06ms, 0.24% (0.01ms)
+bufftrigger2 - NAME_PLATE_UNIT_REMOVED 0.04ms, 0.16% (0.02ms)
+bufftrigger2 - NAME_PLATE_UNIT_ADDED 0.04ms, 0.16% (0.03ms)
+bufftrigger2 - UNIT_AURA 0.04ms, 0.16% (0.01ms)
+sound 0.03ms, 0.12% (0.00ms)
+generictrigger NAME_PLATE_UNIT_REMOVED 0.03ms, 0.11% (0.01ms)
+bufftrigger2 - PLAYER_ENTERING_WORLD 0.02ms, 0.09% (0.02ms)
+generictrigger NAME_PLATE_UNIT_ADDED 0.02ms, 0.06% (0.01ms)
+generictrigger WA_RESTRICTION_CHANGED 0.01ms, 0.02% (0.00ms)
+
+LibGetFrame:

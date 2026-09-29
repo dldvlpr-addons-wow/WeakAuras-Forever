@@ -5,8 +5,7 @@ How WeakAuras works on WoW Forever, and how to build auras that keep working in 
 WoW Forever looks like Classic, but it runs on the modern 12.1 game engine. This engine hides most combat data
 from addons. This guide explains what that changes and gives step-by-step recipes.
 
-This guide comes from the 12.x engine documentation and from tests in game. Forever can differ for some spells.
-When you are not sure, test in game.
+Section 3 says what was tested in game on Forever, and what was not. When you are not sure, test in game.
 
 ---
 
@@ -38,30 +37,22 @@ Basic steps:
 
 ### Secret values
 
-During combat, the game gives addons "secret" values: WeakAuras receives the data but cannot read it,
-compare it or do math with it.
+During combat, boss encounters and PvP matches, the game gives addons "secret" values: WeakAuras receives the
+data but cannot read it, compare it or do math with it. Out of combat, almost everything works like before.
 
-Data becomes secret when:
+What that means for your auras, tested in game on Forever unless marked otherwise:
 
-- you are in combat;
-- a boss encounter is in progress;
-- a PvP match is in progress.
-
-Out of combat, almost everything works like before.
-
-### What WeakAuras Forever does with secret data
-
-Not all of this has been confirmed in game yet.
-
-- The game draws what WeakAuras cannot read: the cooldown swipe, the timer bar and the health or power bar
-  keep running with secret data. So does a text element that contains only `%p` (remaining time), or only `%s`
-  (stacks, Aura trigger).
-- Buffs and debuffs applied during combat still show, as long as the game lets addons read them.
-- An Aura trigger filtered only by **Native Filter** (crowd control, important, cast by me...) also shows the
-  auras the game hides: icon, timer and stack text are drawn by the game, the name stays empty.
-- Logic on a secret value (a condition, a threshold, custom code) cannot run: that part **keeps its last known
-  state**, without errors.
-- When the restriction ends, auras read the data again and update.
+- **The game draws what WeakAuras cannot read.** Cooldown swipes and numbers, timer bars, and health or power
+  bars keep moving in combat. A text made only of `%p` and `%t` (for example `%p` or `%p / %t`) is drawn by the
+  game too, as a raw number.
+- **Buffs and debuffs are refused to addons in combat.** An aura that was showing before the pull keeps counting
+  down from its last known time. Its stacks stay frozen. Everything is read again when combat ends.
+- **Your own recast restarts the timer.** When you cast again a buff that you put on yourself, the timer of an
+  Aura trigger on the Player unit restarts from its last known duration, even if this cast went to someone else.
+  A recast by someone else is not seen.
+- **A buff or debuff applied for the first time in combat** is only seen when combat ends.
+- **Logic on secret data keeps its last state.** A condition such as "Health < 50%" keeps the state it had when
+  combat started, then updates when combat ends. Not tested again since the last fix.
 
 ### The combat log is closed
 
@@ -74,51 +65,57 @@ Triggers that use the combat log (`CLEU`, "Combat Log") never fire. For damage t
   Get the ID of your rank out of combat: `/dump C_Spell.GetSpellInfo("Corruption")`.
   Classic spells have one ID per rank.
 - **Talent load options** are empty. Use the **Class and Specialization** load option instead.
-- **Swing timer** follows the game's own swing event, with a "Target In Range" option.
 - **Chat Message action** can be blocked during encounters and PvP matches.
 - **Old functions in custom code** no longer exist (`GetSpellInfo`, `GetSpellCooldown`, `UnitBuff`...).
   Use `C_Spell`, `C_UnitAuras`, `C_Item`.
+- **Blizzard Cooldown Manager.** `/wa cdm` shows or hides it, out of combat. On the Forever beta it is not
+  enabled for every class: for some classes it has no spell and no buff, and the "From the Cooldown Manager" lists
+  of the Cooldown and Aura triggers are empty.
 
 ---
 
 ## 3. What you can use
 
-Not all of this has been checked on Forever yet.
+**Tested in game, works in combat:**
 
-**Works even in combat (probably):**
+- Spell cooldowns: icon swipe and number. With **Show Global Cooldown**, the "On Global Cooldown" condition can
+  hide the number during the global cooldown.
+- Buffs on yourself known before combat: icon and timer. Your own recast restarts the timer.
+- Health bar of your target and power bar of yourself, with a `%p / %t` text.
+- Swing timer, main hand.
+- Your own casts: `UNIT_SPELLCAST_SUCCEEDED:player` (see the recipes below).
+- `PLAYER_TARGET_DIED`.
 
-- Your own casts and your pet's casts: `UNIT_SPELLCAST_SUCCEEDED:player`, `_START`, `_STOP`, `_CHANNEL_START`.
-- Combo points.
-- Your maximum health and maximum power.
-- The **Global Cooldown** trigger, drawn by the game when it is secret.
-- Swing timer, main hand, off hand and ranged (wand included), and whether the target is in swing range.
-- Target, focus and mouseover checks.
-- Item counts in your bags: ammo, Soul Shards, reagents. The Ammo trigger also gives the total of projectiles.
-- States: in combat, in a group, zone, mounted, resting, stealth, druid form.
+**Tested in game:**
+
+- Temporary weapon enchants (poison, oil, sharpening stone), both hands.
+- **Elapsed Time** filter of the Aura trigger.
+- Bag Space trigger.
+- Role trigger (role chosen in the group finder).
+- `/wa cdm`, and the "From the Cooldown Manager" lists, for the classes that have it.
+
+**Works, with limits:**
+
+- Stacks stay frozen in combat.
+- Conditions and filters on percentages, stacks or remaining time use the value from before combat.
+- A filter checked in the trigger itself (for example "Health (%) < 50") freezes the trigger in combat instead of
+  hiding the aura.
+
+**Not tested in game yet:**
+
+- Swing timer off hand, ranged and wand, "Target In Range" option.
+- Ammo trigger, Equipment Durability, Tracking, instance difficulty load option.
+- Border and icon colored by dispel type.
+- Aura triggers in party or raid mode, glows, range conditions.
 - Encounter start and end: `ENCOUNTER_START`, `ENCOUNTER_END`.
-- Bags, XP, gold, reputation.
 
-**Display in combat, logic out of combat:**
+**Does not work:**
 
-- Buffs and debuffs, yours and your target's: icon and timer keep running, and so do texts that contain only
-  `%p` or only `%s`.
-  Filters on stacks or remaining time use the last readable value.
-- Spell cooldowns: swipe and timer bar keep running. Pick your spells from the Cooldown Manager list in the
-  Cooldown trigger if you want the ones the game tracks.
-- Health, mana, energy and rage bars and their text. Thresholds ("below 30%") use the last readable value.
-- Border color by dispel type (Border element, "Color by Dispel Type").
-
-**Works out of combat only:**
-
-- Weapon enchants (poison, oil, sharpening stone).
-
-**Blocked or limited:**
-
-- Low mana alert, mana or energy tick timer in combat.
+- Aura trigger filtered by **Native Filter** (crowd control, cast by me...): nothing shows at the moment.
 - Other players' casts.
 - Enemy names and IDs in instances.
-
-`/wa cdm` shows or hides the Blizzard Cooldown Manager, out of combat.
+- Low mana alert, mana or energy tick timer in combat.
+- Combat log triggers.
 
 ---
 
@@ -289,6 +286,8 @@ The IDs come from Classic 1.12 data: if an icon stays visible while you have the
 
 ## 7. Recipe: boss timeline
 
+Not tested in game yet.
+
 1. Find the encounter ID. Out of combat, create a test aura on `ENCOUNTER_START` and print the ID,
    or search it on Wowhead.
 2. For each boss ability, create a **Progress Bar**:
@@ -324,6 +323,12 @@ end
 Without this check, the code stops with a Lua error in combat. WeakAuras Forever does not show those errors:
 the aura just keeps its last state.
 
+In combat, the `C_UnitAuras` functions refuse addon code when auras are secret. They stop the code with
+"Auras cannot be accessed when secret while tainted" (tested in game): call them under `pcall`, or only out of
+combat.
+
+For health events, use `UNIT_HEALTH`: `UNIT_HEALTH_FREQUENT` does not exist on Forever.
+
 Other tools:
 
 - `/dump <expression>` shows the content of a value in chat, secret values included.
@@ -356,7 +361,7 @@ WeakAuras Forever converts them on import, and lists in the chat what it could n
 | Cooldown Manager trigger, cooldown | Cooldown trigger (spell ID, or name if ForeverAuras used names) |
 | Cooldown Manager trigger, buff | Aura trigger (your buffs, or your debuffs on the target) |
 | Cooldown Manager trigger, item | Item cooldown trigger |
-| Aura (Blizzard) trigger | Aura trigger with Native Filter (sorting removed) |
+| Aura (Blizzard) trigger | Aura trigger with Native Filter (sorting removed). The Native Filter shows nothing at the moment. |
 | Dispel type icon | Dispel Type Icon sub element |
 | Dispel type border | Border colored by dispel type |
 | Swing Timer, Ammo | Same triggers (Ammo: the item list now filters the equipped ammo) |

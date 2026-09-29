@@ -275,6 +275,17 @@ local function UpdateNativeText(subRegion, parent)
     subRegion.text:SetText(secretStacks)
     return true
   end
+  if type(parent.secretValue) == "number" and textStr:find("%%[pt]")
+     and not textStr:find("%%[pt][%w%.]") and not textStr:gsub("%%[pt]", ""):find("%%")
+  then
+    local values = {}
+    local formatString = textStr:gsub("%%([pt])", function(placeholder)
+      values[#values + 1] = placeholder == "p" and parent.secretValue or parent.secretTotal
+      return "%s"
+    end)
+    subRegion.text:SetText(string.format(formatString, unpack(values)))
+    return true
+  end
   return false
 end
 

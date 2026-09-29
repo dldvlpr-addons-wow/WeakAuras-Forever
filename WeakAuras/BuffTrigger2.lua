@@ -2053,6 +2053,30 @@ local function RefreshRestrictedAuras(matchDataChanged, unit)
   end
 end
 
+local function ResetRecastPlayerAuras(time, spellId)
+  local playerAuras = matchData.player and matchData.player.HELPFUL
+  if not playerAuras or type(spellId) ~= "number" or Private.IsSecret(spellId) then
+    return
+  end
+  for _, data in pairs(playerAuras) do
+    local duration = data.duration
+    if data.spellId == spellId and data.unitCaster == "player"
+       and not Private.IsSecret(duration) and type(duration) == "number" and duration > 0
+    then
+      local modRate = not Private.IsSecret(data.modRate) and data.modRate or 1
+      data.expirationTime = time + duration * modRate
+      data.lastChanged = time
+      secretRescanPending = true
+      for id, triggerData in pairs(data.auras) do
+        for triggernum in pairs(triggerData) do
+          matchDataChanged[id] = matchDataChanged[id] or {}
+          matchDataChanged[id][triggernum] = true
+        end
+      end
+    end
+  end
+end
+
 local ScanUnitWithFilter
 do
   local _matchDataChanged, _time, _unit, _filter, _scanFuncNameGroup, _scanFuncSpellIdGroup, _scanFuncGeneralGroup, _scanFuncName, _scanFuncSpellId, _scanFuncGeneral
@@ -2463,6 +2487,10 @@ local function EventHandler(frame, event, arg1, arg2, ...)
       restrictedRefreshUnits[brokenUnitMap[arg1] and not UnitExists(arg1) and brokenUnitMap[arg1] or arg1] = true
     end
     secretRescanPending = true
+  elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+    if aurasRestricted then
+      ResetRecastPlayerAuras(time, ...)
+    end
   elseif event == "UNIT_AURA" then
     if brokenUnitMap[arg1] and not UnitExists(arg1) then
       arg1 = brokenUnitMap[arg1]
@@ -2582,6 +2610,7 @@ if not Private.hasCombatLog then
       end
     end
   end
+  Buff2Frame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
   -- Rescan when aura data becomes readable again, which can be after the end of combat inside instances
   Private.callbacks:RegisterCallback("RestrictionChanged", function(_, isRestricted)
     local restricted = Private.IsRestricted("auras")
