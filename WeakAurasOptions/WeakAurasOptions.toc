@@ -39,6 +39,7 @@ SubRegionOptions\SubRegionCommon.lua
 SubRegionOptions\Background.lua
 SubRegionOptions\SubText.lua
 SubRegionOptions\Border.lua
+SubRegionOptions\DispelIcon.lua
 SubRegionOptions\Glow.lua
 SubRegionOptions\Tick.lua
 SubRegionOptions\Model.lua

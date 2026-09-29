@@ -2051,11 +2051,12 @@ end
 
 ---@type table<number, string>
 Private.talent_types = {}
-if WeakAuras.IsCataOrMistsOrRetail() then
+if WeakAuras.IsCataOrMistsOrRetail() or Private.hasSpecializations then
   local spec_frame = CreateFrame("Frame");
   spec_frame:RegisterEvent("PLAYER_LOGIN")
   spec_frame:SetScript("OnEvent", update_specs);
-else
+end
+if not WeakAuras.IsCataOrMistsOrRetail() then
   for tab = 1, (GetNumTalentTabs and GetNumTalentTabs() or 0) do
     for num_talent = 1, (GetNumTalents and GetNumTalents(tab) or 0) do
       local talentId = (tab - 1) * (MAX_NUM_TALENTS or 20) + num_talent
@@ -2835,6 +2836,30 @@ Private.swing_types = {
   ["off"] = SECONDARYHANDSLOT
 }
 
+Private.swing_range_types = {
+  inRange = L["In Range"],
+  outOfRange = L["Out of Range"],
+}
+
+-- Aura categories of the client (AuraUtil.AuraFilters), tested with C_UnitAuras.IsAuraFilteredOutByInstanceID
+Private.aura_native_filter_types = {
+  PLAYER = L["Cast by Me or my Pet"],
+  RAID = L["Can Apply or Dispel"],
+  RAID_IN_COMBAT = L["Shown on Raid Frames in Combat"],
+  RAID_PLAYER_DISPELLABLE = L["Dispellable by the Group"],
+  DISPELLABLE = L["Dispellable"],
+  CANCELABLE = L["Cancelable"],
+  IMPORTANT = L["Important"],
+  CROWD_CONTROL = L["Crowd Control"],
+  BIG_DEFENSIVE = L["Big Defensive"],
+  EXTERNAL_DEFENSIVE = L["External Defensive"],
+}
+
+Private.durability_progress_types = {
+  overall = L["Overall Durability (%)"],
+  lowest = L["Lowest Item Durability (%)"],
+}
+
 if WeakAuras.IsClassicOrTBCOrWrath() then
   Private.swing_types["ranged"] = RANGEDSLOT
 end
@@ -3089,7 +3114,7 @@ end
 ---@type table
 Private.instance_difficulty_types = {}
 
-if not WeakAuras.IsClassicEra() then
+if GetDifficultyInfo then
   -- Fill out instance_difficulty_types automatically.
   -- Unfortunately the names BLizzard gives are not entirely unique,
   -- so try hard to disambiguate them via the type, and if nothing works by
@@ -3172,7 +3197,8 @@ if not WeakAuras.IsClassicEra() then
         end
       else
         Private.instance_difficulty_types[i] = name
-        WeakAuras.prettyPrint(string.format("Unknown difficulty id found. You are probably running an outdated version. Debug Information: %s %s %s", i, name, type))
+        -- WoW Forever has its own difficulty IDs: name them, without the outdated version warning
+        if not WeakAuras.IsClassicEra() then WeakAuras.prettyPrint(string.format("Unknown difficulty id found. You are probably running an outdated version. Debug Information: %s %s %s", i, name, type)) end
       end
     end
   end
@@ -4499,6 +4525,10 @@ if WeakAuras.IsClassicEra() then
   wipe(Private.multiUnitUnits.arena)
   Private.unit_types_bufftrigger_2.boss = nil
   Private.unit_types_bufftrigger_2.arena = nil
+  -- Multi-target follows other units' auras through the combat log, closed on the 12.x engine
+  if not Private.hasCombatLog then
+    Private.unit_types_bufftrigger_2.multi = nil
+  end
   Private.actual_unit_types_cast.boss = nil
   Private.actual_unit_types_cast.arena = nil
   Private.item_slot_types[0] = AMMOSLOT

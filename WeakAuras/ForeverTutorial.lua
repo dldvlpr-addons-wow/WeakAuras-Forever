@@ -25,7 +25,8 @@ local blocks = {
   { title = "What is different on WoW Forever" },
   { text = "WoW Forever runs on the modern game engine. During combat, boss encounters and PvP matches, "
     .. "the game hides most combat data from addons: buffs, debuffs, cooldowns and other players' casts.\n\n"
-    .. "- An aura that cannot read its data keeps its last state, and updates when combat ends.\n"
+    .. "- The game still draws timers, bars, and texts set to only %p or %s. Conditions and thresholds on hidden data "
+    .. "keep their last state, and update when combat ends.\n"
     .. "- Your own casts stay readable in combat. Build auras on them.\n"
     .. "- The combat log is closed: combat log triggers never fire.\n"
     .. "- Type spell IDs, not spell names. Every rank has its own ID. Out of combat: "

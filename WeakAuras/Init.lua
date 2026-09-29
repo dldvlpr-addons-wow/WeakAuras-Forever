@@ -439,6 +439,87 @@ function Private.IsSecret(...)
   return false
 end
 
+local restrictionQueries = {
+  auras = "ShouldAurasBeSecret",
+  cooldowns = "ShouldCooldownsBeSecret",
+  spellCooldown = "ShouldSpellCooldownBeSecret",
+  unitStats = "ShouldUnitStatsBeSecret",
+  unitIdentity = "ShouldUnitIdentityBeSecret",
+  auraInstance = "ShouldUnitAuraInstanceBeSecret",
+}
+
+--- Asks the client whether a kind of data is secret right now.
+--- Returns nil when the client cannot tell (no C_Secrets, or an unexpected answer).
+---@param kind "auras"|"cooldowns"|"spellCooldown"|"unitStats"|"unitIdentity"|"auraInstance"
+---@return boolean|nil
+function Private.IsRestricted(kind, ...)
+  local query = C_Secrets and C_Secrets[restrictionQueries[kind]]
+  if type(query) ~= "function" then
+    return nil
+  end
+  local ok, result = pcall(query, ...)
+  if not ok or Private.IsSecret(result) or type(result) ~= "boolean" then
+    return nil
+  end
+  return result
+end
+
+--- True while aura or cooldown data is hidden from addons.
+--- Without C_Secrets, being in combat is used instead.
+---@return boolean
+function WeakAuras.IsRestricted()
+  local auras, cooldowns = Private.IsRestricted("auras"), Private.IsRestricted("cooldowns")
+  if auras == nil and cooldowns == nil then
+    return InCombatLockdown()
+  end
+  return auras or cooldowns or false
+end
+
+--- Fires Private.callbacks "RestrictionChanged" (isRestricted) when WeakAuras.IsRestricted() changes,
+--- or when only the aura, the cooldown or the unit stats restriction changes.
+do
+  local restricted, aurasRestricted, cooldownsRestricted, unitStatsRestricted
+  local function Update()
+    local isRestricted = WeakAuras.IsRestricted()
+    local auras, cooldowns = Private.IsRestricted("auras"), Private.IsRestricted("cooldowns")
+    local unitStats = Private.IsRestricted("unitStats")
+    if isRestricted ~= restricted or auras ~= aurasRestricted or cooldowns ~= cooldownsRestricted
+       or unitStats ~= unitStatsRestricted
+    then
+      restricted, aurasRestricted, cooldownsRestricted, unitStatsRestricted = isRestricted, auras, cooldowns, unitStats
+      Private.callbacks:Fire("RestrictionChanged", isRestricted)
+    end
+  end
+  local frame = CreateFrame("Frame")
+  frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+  frame:RegisterEvent("PLAYER_REGEN_DISABLED")
+  frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+  pcall(frame.RegisterEvent, frame, "ADDON_RESTRICTION_STATE_CHANGED")
+  frame:SetScript("OnEvent", function(_, event)
+    Update()
+    if event == "ADDON_RESTRICTION_STATE_CHANGED" or event == "PLAYER_REGEN_DISABLED" then
+      -- Restrictions and the combat lockdown only apply once these events are dispatched
+      C_Timer.After(0, Update)
+    end
+  end)
+end
+
+--- The aura instance API (UNIT_AURA update info, auras and tooltips by auraInstanceID), on Retail and on the 12.x engine
+Private.hasAuraInstanceAPI = C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID and C_UnitAuras.GetAuraSlots
+                             and AuraUtil and AuraUtil.ForEachAura
+                             and C_TooltipInfo and C_TooltipInfo.GetUnitBuffByAuraInstanceID and true or false
+
+--- True for the duration objects of the 12.x engine (C_Spell.GetSpellCooldownDuration, C_UnitAuras.GetAuraDuration...),
+--- which are userdata.
+---@return boolean
+function Private.IsDurationObject(value)
+  if type(value) ~= "userdata" then
+    return false
+  end
+  local ok, method = pcall(function() return value.GetRemainingDuration end)
+  return ok and type(method) == "function"
+end
+
 ---@return boolean result
 function WeakAuras.IsClassicEra()
   return flavor == 1
@@ -708,6 +789,8 @@ function Private.StopProfileUID()
 end
 
 Private.ExecEnv = {}
+-- For the built-in trigger code, see ConstructFunction
+Private.ExecEnv.IsSecret = Private.IsSecret
 
 -- If WeakAuras shuts down due to being installed on the wrong target, keep the bindings from erroring
 --- @type fun(type: string)

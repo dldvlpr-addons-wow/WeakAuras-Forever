@@ -408,6 +408,8 @@ local function UpdateProgressFromState(self, minMaxConfig, state, progressSource
   local remainingProperty = progressSource[8]
   local useAdditionalProgress = progressSource[9]
 
+  self.durationObject = nil
+  self.secretValue, self.secretTotal = nil, nil
   if not state then
     self.minProgress, self.maxProgress = nil, nil
     self.progressType = "timed"
@@ -452,6 +454,15 @@ local function UpdateProgressFromState(self, minMaxConfig, state, progressSource
     self.progressType = "static"
     self.value = value - adjustMin
     self.total = max - adjustMin
+    -- A secret progress (see ScrubSecretState) can be drawn natively, without adjusted min/max values
+    -- type() is the only test allowed on a secret
+    if property == "value" and totalProperty == "total"
+       and type(state.secretValue) == "number" and type(state.secretTotal) == "number"
+       and not (minMaxConfig.adjustedMin or minMaxConfig.adjustedMinRelPercent
+                or minMaxConfig.adjustedMax or minMaxConfig.adjustedMaxRelPercent) then
+      self.secretValue = state.secretValue
+      self.secretTotal = state.secretTotal
+    end
     if self.UpdateValue then
       self:UpdateValue()
     end
@@ -506,6 +517,14 @@ local function UpdateProgressFromState(self, minMaxConfig, state, progressSource
     self.duration = max - adjustMin
     self.expirationTime = expirationTime - adjustMin
     self.remaining = remaining
+    -- A duration object from the 12.x engine can be drawn natively even when its values are secret,
+    -- but it cannot be combined with adjusted min/max values
+    if property == "expirationTime" and not paused
+       and not (minMaxConfig.adjustedMin or minMaxConfig.adjustedMinRelPercent
+                or minMaxConfig.adjustedMax or minMaxConfig.adjustedMaxRelPercent)
+       and Private.IsDurationObject(state.durationObject) then
+      self.durationObject = state.durationObject
+    end
     self.modRate = modRate
     self.inverse = inverse
     self.paused = paused
@@ -569,6 +588,8 @@ local function UpdateProgressFromAuto(self, minMaxConfig, state)
   elseif state.progressType == "static"then
     UpdateProgressFromState(self, minMaxConfig, state, autoStaticProgressSource)
   else
+    self.durationObject = nil
+    self.secretValue, self.secretTotal = nil, nil
     self.minProgress, self.maxProgress = nil, nil
     self.progressType = "timed"
     self.duration = 0
@@ -605,6 +626,8 @@ local function UpdateProgressFromManual(self, minMaxConfig, state, value, total)
   else
     max = total
   end
+  self.durationObject = nil
+  self.secretValue, self.secretTotal = nil, nil
   self.minProgress, self.maxProgress = adjustMin, max
   self.progressType = "static"
   self.value = value - adjustMin
@@ -927,6 +950,8 @@ function Private.regionPrototype.AddSetDurationInfo(region, uid)
     region.SetDurationInfo = function(self, duration, expirationTime, customValue, inverse)
       -- For now don't warn against SetDurationInfo
       -- Private.AuraWarnings.UpdateWarning(uid, "SetDurationInfo", "warning", L["Aura is using deprecated SetDurationInfo"])
+      self.durationObject = nil
+      self.secretValue, self.secretTotal = nil, nil
       if customValue then
         local adjustMin = region.adjustedMin or 0;
         local max = self.adjustedMax or expirationTime

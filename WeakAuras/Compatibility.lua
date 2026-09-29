@@ -49,6 +49,14 @@ if C_SpecializationInfo and C_SpecializationInfo.GetNumSpecializationsForClassID
 else
   Private.ExecEnv.GetNumSpecializationsForClassID = GetNumSpecializationsForClassID
 end
+-- WoW Forever: the client reports every swing with PLAYER_SWING (C_SwingTimer), including wands and ranged weapons
+Private.hasNativeSwingTimer = C_SwingTimer ~= nil and Enum ~= nil and Enum.PlayerSwingType ~= nil
+
+-- WoW Forever: a Classic Era client with the specializations of the 12.x engine
+Private.hasSpecializations = WeakAuras.IsClassicEra() and C_SpecializationInfo ~= nil
+  and C_SpecializationInfo.GetSpecialization ~= nil and C_SpecializationInfo.GetNumSpecializationsForClassID ~= nil
+  and GetSpecializationInfoForClassID ~= nil
+
 if WeakAuras.IsMists() then
   local specsByClassID = {
     [0] = { 74, 81, 79 },

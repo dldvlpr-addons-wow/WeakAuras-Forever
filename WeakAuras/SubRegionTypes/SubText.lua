@@ -197,11 +197,93 @@ local function create()
   return region;
 end
 
+-- WoW Forever: the client draws the text of values that addons cannot read in combat.
+-- A text that is only %p follows the duration object of the region, and a text that is only %s shows the secret
+-- stack text of the state. Any other text uses the last readable values.
+local canBindDurationText = C_DurationUtil ~= nil and C_DurationUtil.CreateDurationTextBinding ~= nil
+  and C_StringUtil ~= nil and C_StringUtil.CreateSecondsFormatter ~= nil
+local durationFormatters = {}
+
+-- Closest client formatter to the %p time format options. The client shows at most one decimal, and has no
+-- "63:42" format: the WeakAuras format uses the client's default one.
+local function ConfigureDurationFormatter(formatter, timeFormat, threshold)
+  if timeFormat == 1 or timeFormat == 2 then
+    -- Old Blizzard: one unit ("3m"), modern Blizzard: two units ("3m 7s")
+    formatter:SetDesiredUnitCount(timeFormat)
+    if Enum.SecondsFormatterAbbreviation then
+      formatter:SetDefaultAbbreviation(Enum.SecondsFormatterAbbreviation.OneLetter)
+    end
+  end
+  if tonumber(threshold) then
+    formatter:SetMillisecondsThreshold(tonumber(threshold))
+  end
+end
+
+local function GetDurationFormatter(timeFormat, threshold)
+  local key = tostring(timeFormat) .. ":" .. tostring(threshold)
+  if not durationFormatters[key] then
+    local formatter = C_StringUtil.CreateSecondsFormatter()
+    -- An option the client refuses keeps its default, instead of failing on every frame
+    if not pcall(ConfigureDurationFormatter, formatter, timeFormat, threshold) then
+      formatter = C_StringUtil.CreateSecondsFormatter()
+    end
+    durationFormatters[key] = formatter
+  end
+  return durationFormatters[key]
+end
+
+local function BindDurationText(subRegion, durationObject)
+  local binding = subRegion.durationTextBinding
+  if not binding then
+    -- Remembered before the setup, so that a client refusing it fails once instead of every frame
+    subRegion.durationTextBinding = false
+    binding = C_DurationUtil.CreateDurationTextBinding()
+    binding:SetFontString(subRegion.text)
+    subRegion.durationTextBinding = binding
+  end
+  local formatter = GetDurationFormatter(subRegion.durationTimeFormat, subRegion.durationThreshold)
+  if subRegion.boundDurationFormatter ~= formatter then
+    binding:SetFormatter(formatter)
+    subRegion.boundDurationFormatter = formatter
+  end
+  if subRegion.boundDurationObject ~= durationObject then
+    binding:SetDuration(durationObject)
+    binding:SetEnabled(true)
+    subRegion.boundDurationObject = durationObject
+  end
+end
+
+local function UnbindDurationText(subRegion)
+  if subRegion.boundDurationObject then
+    subRegion.durationTextBinding:SetEnabled(false)
+    subRegion.boundDurationObject = nil
+  end
+end
+
+-- Returns true when the client draws the text
+local function UpdateNativeText(subRegion, parent)
+  local textStr = subRegion.text_text
+  if textStr == "%p" and canBindDurationText and subRegion.durationTextBinding ~= false and parent.durationObject
+     and pcall(BindDurationText, subRegion, parent.durationObject)
+  then
+    return true
+  end
+  UnbindDurationText(subRegion)
+  local secretStacks = textStr == "%s" and parent.state and parent.state.secretStacks
+  -- Only set during the restriction, secret or not. type() is the only test allowed on a secret
+  if type(secretStacks) == "string" then
+    subRegion.text:SetText(secretStacks)
+    return true
+  end
+  return false
+end
+
 local function onAcquire(subRegion)
   subRegion:Show()
 end
 
 local function onRelease(subRegion)
+  UnbindDurationText(subRegion)
   subRegion:Hide()
 end
 
@@ -335,9 +417,14 @@ local function modify(parent, region, parentData, data, first)
   region.subTextFormatters, region.everyFrameFormatters = Private.CreateFormatters(texts, getter, false, parentData)
 
   function region:ConfigureTextUpdate()
+    -- A text that is no longer only %p must not be overwritten by the duration text binding
+    UnbindDurationText(region)
     local UpdateText
     if region.text_text and Private.ContainsAnyPlaceHolders(region.text_text) then
       UpdateText = function()
+        if UpdateNativeText(region, parent) then
+          return
+        end
         local textStr = region.text_text or ""
         textStr = Private.ReplacePlaceHolders(textStr, parent, nil, false, self.subTextFormatters)
 
@@ -424,6 +511,8 @@ local function modify(parent, region, parentData, data, first)
   end
 
   region.text_text = data.text_text
+  region.durationTimeFormat = data.text_text_format_p_time_format
+  region.durationThreshold = data.text_text_format_p_time_dynamic_threshold
   region:ConfigureTextUpdate()
 
   function region:SetTextHeight(size)

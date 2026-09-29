@@ -13,7 +13,8 @@ if not lib then return end
 local Masque = LibStub("Masque", true)
 local AnimateTexCoords = (TextureUtil and TextureUtil.AnimateTexCoords) or _G.AnimateTexCoords
 
-local isRetail = WOW_PROJECT_ID == WOW_PROJECT_MAINLINE
+-- WoW Forever (WeakAuras Forever change): reports the retail project ID with Classic textures (interface 1.x)
+local isRetail = WOW_PROJECT_ID == WOW_PROJECT_MAINLINE and select(4, GetBuildInfo()) >= 20000
 local textureList = {
     empty = [[Interface\AdventureMap\BrokenIsles\AM_29]],
     white = [[Interface\BUTTONS\WHITE8X8]],

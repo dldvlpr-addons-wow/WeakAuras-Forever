@@ -421,8 +421,16 @@ local function modify(parent, region, data)
     -- If cooldown.inverse == false then effectiveReverse = not inverse
     -- If cooldown.inverse == true then effectiveReverse = inverse
     local effectiveReverse = not region.inverseDirection == not cooldown.inverse
+    local reverseChanged = cooldown.durationObject and not cooldown:GetReverse() ~= not effectiveReverse
     cooldown:SetReverse(effectiveReverse)
-    if (cooldown.expirationTime and cooldown.duration and cooldown:IsShown()) then
+    if cooldown.durationObject then
+      -- Duration objects are applied again on every secret update, only restart the swipe when needed
+      if reverseChanged and cooldown:IsShown() then
+        -- WORKAROUND SetReverse not applying until next frame
+        cooldown:SetCooldown(0, 0)
+        cooldown:SetCooldownFromDurationObject(cooldown.durationObject, true)
+      end
+    elseif (cooldown.expirationTime and cooldown.duration and cooldown:IsShown()) then
       -- WORKAROUND SetReverse not applying until next frame
       cooldown:SetCooldown(0, 0)
       cooldown:SetCooldown(cooldown.expirationTime - cooldown.duration,
@@ -502,16 +510,24 @@ local function modify(parent, region, data)
   end
 
   function region:UpdateIcon()
-    local iconPath
+    local iconPath, iconState
     if self.iconSource == -1 then
+      iconState = self.state
       iconPath = self.state.icon
     elseif self.iconSource == 0 then
       iconPath = self.displayIcon
     else
       local triggernumber = self.iconSource
       if triggernumber and self.states[triggernumber] then
-        iconPath = self.states[triggernumber].icon
+        iconState = self.states[triggernumber]
+        iconPath = iconState.icon
       end
+    end
+
+    -- An aura applied during the restriction: the client draws its secret icon
+    if iconPath == nil and iconState and type(iconState.secretIcon) ~= "nil" then
+      self.icon:SetTexture(iconState.secretIcon)
+      return
     end
 
     iconPath = iconPath or self.displayIcon or "Interface\\Icons\\INV_Misc_QuestionMark"
@@ -564,6 +580,7 @@ local function modify(parent, region, data)
   cooldown.expirationTime = nil;
   cooldown.duration = nil;
   cooldown.modRate = nil
+  cooldown.durationObject = nil
   cooldown.useCooldownModRate = data.useCooldownModRate
   cooldown:Hide()
   if(data.cooldown) then
@@ -571,6 +588,7 @@ local function modify(parent, region, data)
       cooldown.expirationTime = nil
       cooldown.duration = nil
       cooldown.modRate = nil
+      cooldown.durationObject = nil
       cooldown.value = self.value
       cooldown.total = self.total
       if (self.value >= 0 and self.value <= self.total) then
@@ -590,6 +608,19 @@ local function modify(parent, region, data)
       else
         cooldown:Resume()
       end
+      -- Duration objects stay drawable when their values are secret
+      if self.durationObject and cooldown.SetCooldownFromDurationObject then
+        cooldown.expirationTime = nil
+        cooldown.duration = nil
+        cooldown.modRate = nil
+        cooldown.durationObject = self.durationObject
+        cooldown.inverse = self.inverse
+        cooldown:Show()
+        region:UpdateEffectiveInverse()
+        cooldown:SetCooldownFromDurationObject(self.durationObject, true)
+        return
+      end
+      cooldown.durationObject = nil
       if (self.duration > 0 and self.expirationTime > GetTime() and self.expirationTime ~= math.huge) then
         cooldown:Show();
         cooldown.expirationTime = self.expirationTime
@@ -608,7 +639,11 @@ local function modify(parent, region, data)
     end
 
     function region:PreShow()
-      if (cooldown.duration and cooldown.duration > 0.01 and cooldown.duration ~= math.huge and cooldown.expirationTime ~= math.huge) then
+      if cooldown.durationObject then
+        cooldown:Show()
+        cooldown:SetCooldownFromDurationObject(cooldown.durationObject, true)
+        cooldown:Resume()
+      elseif (cooldown.duration and cooldown.duration > 0.01 and cooldown.duration ~= math.huge and cooldown.expirationTime ~= math.huge) then
         cooldown:Show();
         cooldown:SetCooldown(cooldown.expirationTime - cooldown.duration,
                              cooldown.duration,

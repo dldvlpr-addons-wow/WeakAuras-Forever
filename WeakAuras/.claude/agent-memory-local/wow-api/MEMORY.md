@@ -1,0 +1,2 @@
+- [Secrets/duration APIs](verified_secrets_duration_apis.md) — Forever 1.60.1 verified signatures; live absent
+- [Spec/range/ammo](verified_spec_range_ammo.md) — forever+live 12.1 checked; specs exist, ammo slot exists

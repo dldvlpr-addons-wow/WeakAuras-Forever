@@ -58,6 +58,13 @@ local isCata = WOW_PROJECT_ID == WOW_PROJECT_CATACLYSM_CLASSIC
 local isMists = WOW_PROJECT_ID == WOW_PROJECT_MISTS_CLASSIC
 local isMidnight = WOW_PROJECT_ID == WOW_PROJECT_MAINLINE and interfaceVersion >= 120000
 
+-- WoW Forever (WeakAuras Forever change): a Classic Era client (interface 1.x) that reports the retail project ID
+-- and has the secret values of the 12.x engine. Its spells and items are the Classic Era ones.
+if isRetail and interfaceVersion < 20000 then
+  isRetail, isEra = false, true
+end
+isMidnight = isMidnight or issecretvalue ~= nil
+
 local InCombatLockdownRestriction = function(unit) return InCombatLockdown() and not UnitCanAttack("player", unit) end
 
 local _G = _G

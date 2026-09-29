@@ -1491,10 +1491,11 @@ Private.load_prototype = {
       display = L["Class and Specialization"],
       type = "multiselect",
       values = "spec_types_all",
-      init = WeakAuras.IsCataOrMistsOrRetail() and "arg" or nil,
-      enable = WeakAuras.IsCataOrMistsOrRetail(),
-      hidden = not WeakAuras.IsCataOrMistsOrRetail(),
-      events = {"PLAYER_TALENT_UPDATE"},
+      init = (WeakAuras.IsCataOrMistsOrRetail() or Private.hasSpecializations) and "arg" or nil,
+      enable = WeakAuras.IsCataOrMistsOrRetail() or Private.hasSpecializations,
+      hidden = not (WeakAuras.IsCataOrMistsOrRetail() or Private.hasSpecializations),
+      events = Private.hasSpecializations and {"PLAYER_TALENT_UPDATE", "PLAYER_SPECIALIZATION_CHANGED"}
+               or {"PLAYER_TALENT_UPDATE"},
       sorted = true,
       sortOrder = Private.specs_sorted,
     },
@@ -2067,9 +2068,7 @@ Private.load_prototype = {
       type = "multiselect",
       values = "instance_difficulty_types",
       sorted = true,
-      init = not WeakAuras.IsClassicEra() and "arg" or nil,
-      enable = not WeakAuras.IsClassicEra(),
-      hidden = WeakAuras.IsClassicEra(),
+      init = "arg",
       events = {"PLAYER_DIFFICULTY_CHANGED", "ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA", "WA_DELAYED_PLAYER_ENTERING_WORLD"},
       optional = true,
     },
@@ -2359,6 +2358,73 @@ local GetNameAndIconForSpellName = function(trigger)
   return name, icon
 end
 
+-- Spells of the Cooldown Manager catalog, by spell ID, for the spell picker of the cooldown trigger options.
+-- The catalog has no secret field, so it is readable in combat too.
+local function ForEachCooldownManagerEntry(categoryNames, func)
+  if not (C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet and Enum and Enum.CooldownViewerCategory) then
+    return
+  end
+  for _, categoryName in ipairs(categoryNames) do
+    local category = Enum.CooldownViewerCategory[categoryName]
+    local ok, cooldownIDs = pcall(C_CooldownViewer.GetCooldownViewerCategorySet, category)
+    if category and ok and type(cooldownIDs) == "table" then
+      for _, cooldownID in ipairs(cooldownIDs) do
+        local infoOk, info = pcall(C_CooldownViewer.GetCooldownViewerCooldownInfo, cooldownID)
+        if infoOk and info then
+          func(cooldownID, info)
+        end
+      end
+    end
+  end
+end
+
+local function SpellLabel(spellID)
+  local name, _, icon = Private.ExecEnv.GetSpellInfo(spellID)
+  return name and (icon and ("|T%s:16|t %s"):format(icon, name) or name)
+end
+
+--- Spells of the Cooldown Manager cooldown categories, keyed by spell ID
+function Private.GetCooldownManagerSpells()
+  local spells = {}
+  -- Spell categories only: the equipment ones hold items, covered by the item cooldown triggers
+  ForEachCooldownManagerEntry({"Essential", "Utility"}, function(cooldownID, info)
+    local spellID = info.spellID
+    if spellID and not spells[spellID] then
+      spells[spellID] = SpellLabel(spellID)
+    end
+  end)
+  return spells
+end
+
+--- Buffs of the Cooldown Manager tracked categories, keyed by cooldown ID
+function Private.GetCooldownManagerAuras()
+  local auras = {}
+  ForEachCooldownManagerEntry({"TrackedBuff", "TrackedBar"}, function(cooldownID, info)
+    if info.spellID then
+      auras[cooldownID] = SpellLabel(info.spellID)
+    end
+  end)
+  return auras
+end
+
+--- Aura spell IDs of a Cooldown Manager entry: like the default UI, the linked spells, then the tooltip spell,
+--- then the spell itself
+function Private.GetCooldownManagerAuraSpellIDs(cooldownID)
+  local spellIDs = {}
+  local info = C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCooldownInfo(cooldownID)
+  if info then
+    for _, spellID in ipairs(info.linkedSpellIDs or {}) do
+      tinsert(spellIDs, spellID)
+    end
+    for _, spellID in ipairs({info.overrideTooltipSpellID or false, info.spellID or false}) do
+      if spellID then
+        tinsert(spellIDs, spellID)
+      end
+    end
+  end
+  return spellIDs
+end
+
 Private.event_prototypes = {
   ["Unit Characteristics"] = {
     type = "unit",
@@ -2576,7 +2642,7 @@ Private.event_prototypes = {
         store = true,
         hidden = true,
         test = "true",
-        init = "raidMarkIndex > 0 and '{rt'..raidMarkIndex..'}' or ''"
+        init = "not Private.ExecEnv.IsSecret(raidMarkIndex) and raidMarkIndex > 0 and '{rt'..raidMarkIndex..'}' or ''"
       },
       {
         name = "dead",
@@ -2899,7 +2965,7 @@ Private.event_prototypes = {
         name = "percentRep",
         display = L["Reputation (%)"],
         type = "number",
-        init = "total ~= 0 and (value / total) * 100 or nil",
+        init = "not Private.ExecEnv.IsSecret(value, total) and total ~= 0 and (value / total) * 100 or nil",
         store = true,
         conditionType = "number",
         noProgressSource = true,
@@ -3156,7 +3222,7 @@ Private.event_prototypes = {
         name = "percentXP",
         display = L["Experience (%)"],
         type = "number",
-        init = "total ~= 0 and (value / total) * 100 or nil",
+        init = "not Private.ExecEnv.IsSecret(value, total) and total ~= 0 and (value / total) * 100 or nil",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -3330,7 +3396,7 @@ Private.event_prototypes = {
         name = "percenthealth",
         display = L["Health (%)"],
         type = "number",
-        init = "total ~= 0 and (value / total) * 100 or nil",
+        init = "not Private.ExecEnv.IsSecret(value, total) and total ~= 0 and (value / total) * 100 or nil",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -3343,7 +3409,7 @@ Private.event_prototypes = {
         name = "deficit",
         display = L["Health Deficit"],
         type = "number",
-        init = "total - value",
+        init = "not Private.ExecEnv.IsSecret(value, total) and total - value or nil",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -3579,7 +3645,7 @@ Private.event_prototypes = {
         store = true,
         hidden = true,
         test = "true",
-        init = "raidMarkIndex > 0 and '{rt'..raidMarkIndex..'}' or ''"
+        init = "not Private.ExecEnv.IsSecret(raidMarkIndex) and raidMarkIndex > 0 and '{rt'..raidMarkIndex..'}' or ''"
       },
       {
         type = "header",
@@ -3864,12 +3930,14 @@ Private.event_prototypes = {
         if powerType == 4 then
           table.insert(ret, [[
             local power = GetComboPoints(unit, unit .. '-target')
-            local total = math.max(1, UnitPowerMax(unit, Enum.PowerType.ComboPoints))
+            local total = UnitPowerMax(unit, Enum.PowerType.ComboPoints)
+            if not Private.ExecEnv.IsSecret(total) then total = math.max(1, total) end
           ]])
         else
           table.insert(ret, [[
             local power = UnitPower(unit, powerType)
-            local total = math.max(1, UnitPowerMax(unit, powerType))
+            local total = UnitPowerMax(unit, powerType)
+            if not Private.ExecEnv.IsSecret(total) then total = math.max(1, total) end
           ]])
         end
       end
@@ -4029,7 +4097,7 @@ Private.event_prototypes = {
         name = "percentpower",
         display = L["Power (%)"],
         type = "number",
-        init = "total ~= 0 and (value / total) * 100 or nil",
+        init = "not Private.ExecEnv.IsSecret(value, total) and total ~= 0 and (value / total) * 100 or nil",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -4042,7 +4110,7 @@ Private.event_prototypes = {
         name = "deficit",
         display = L["Power Deficit"],
         type = "number",
-        init = "total - value",
+        init = "not Private.ExecEnv.IsSecret(value, total) and total - value or nil",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -4183,7 +4251,7 @@ Private.event_prototypes = {
         store = true,
         hidden = true,
         test = "true",
-        init = "raidMarkIndex > 0 and '{rt'..raidMarkIndex..'}' or ''"
+        init = "not Private.ExecEnv.IsSecret(raidMarkIndex) and raidMarkIndex > 0 and '{rt'..raidMarkIndex..'}' or ''"
       },
       {
         type = "header",
@@ -4482,7 +4550,7 @@ Private.event_prototypes = {
         store = true,
         hidden = true,
         test = "true",
-        init = "raidMarkIndex > 0 and '{rt'..raidMarkIndex..'}' or ''"
+        init = "not Private.ExecEnv.IsSecret(raidMarkIndex) and raidMarkIndex > 0 and '{rt'..raidMarkIndex..'}' or ''"
       },
       {
         type = "header",
@@ -5444,6 +5512,11 @@ Private.event_prototypes = {
             state.modRate = modRate;
             state.changed = true;
           end
+          local durationObject = WeakAuras.GetSpellCooldownDurationObject(effectiveSpellId, showgcd, ignoreSpellKnown, track)
+          if state.durationObject ~= durationObject then
+            state.durationObject = durationObject
+            state.changed = true
+          end
           state.progressType = 'timed';
         ]=])
       else -- Tracking charges
@@ -5516,6 +5589,7 @@ Private.event_prototypes = {
         type = "spell",
         test = "true",
         showExactOption = true,
+        cooldownManagerPicker = true,
       },
       {
         name = "extra Cooldown Progress (Spell)",
@@ -5714,8 +5788,14 @@ Private.event_prototypes = {
       {
         hidden = true,
         name = "gcdCooldown",
+        display = L["On Global Cooldown"],
+        desc = L["Only with Show Global Cooldown enabled. Set Hide Cooldown Text on it to hide the countdown during the global cooldown."],
         store = true,
-        test = "true"
+        test = "true",
+        conditionType = "bool",
+        conditionTest = function(state, needle)
+          return state and (state.gcdCooldown and true or false) == (needle == 1)
+        end,
       },
       {
         name = "spellUsable",
@@ -6561,7 +6641,7 @@ Private.event_prototypes = {
     init = function(trigger)
       local ret = [[
         local inverse = %s;
-        local duration, expirationTime, name, icon = WeakAuras.GetGCDInfo()
+        local duration, expirationTime, name, icon, _, durationObject = WeakAuras.GetGCDInfo()
         local hasSpellName = WeakAuras.GcdSpellName();
       ]];
       return ret:format(trigger.use_inverse and "true" or "false");
@@ -6612,8 +6692,16 @@ Private.event_prototypes = {
         store = true
       },
       {
+        name = "durationObject",
         hidden = true,
-        test = "(inverse and duration == 0) or (not inverse and duration > 0 and hasSpellName)"
+        init = "durationObject",
+        test = "true",
+        store = true
+      },
+      {
+        hidden = true,
+        test = "(inverse and duration == 0 and not durationObject)"
+               .. " or (not inverse and (duration > 0 or durationObject) and hasSpellName)"
       }
     },
     hasSpellID = true,
@@ -6637,6 +6725,7 @@ Private.event_prototypes = {
         local hand = %q;
         local triggerRemaining = %s
         local duration, expirationTime, name, icon = WeakAuras.GetSwingTimerInfo(hand)
+        local inRange = WeakAuras.IsTargetInSwingRange and WeakAuras.IsTargetInSwingRange(hand)
         local remaining = expirationTime and expirationTime - GetTime()
         local remainingCheck = not triggerRemaining or remaining and remaining %s triggerRemaining
 
@@ -6657,7 +6746,7 @@ Private.event_prototypes = {
         type = "description",
         display = "",
         text = function()
-          if not WeakAuras.IsRetail() then
+          if not WeakAuras.IsRetail() and not Private.hasNativeSwingTimer then
             return L["Note: Due to how complicated the swing timer behavior is and the lack of APIs from Blizzard, results are inaccurate in edge cases."]
           end
         end,
@@ -6670,6 +6759,18 @@ Private.event_prototypes = {
         type = "select",
         values = "swing_types",
         test = "true"
+      },
+      {
+        name = "inRange",
+        display = L["Target In Range"],
+        -- A select, not a tristate: an unknown range (no target) is neither in nor out of range
+        type = "select",
+        values = "swing_range_types",
+        test = "inRange == ([[%s]] == 'inRange')",
+        init = "inRange",
+        store = true,
+        conditionType = "bool",
+        enable = Private.hasNativeSwingTimer,
       },
       {
         name = "duration",
@@ -7413,6 +7514,9 @@ Private.event_prototypes = {
     type = "unit",
     events = function()
       local events = { "PLAYER_TALENT_UPDATE" }
+      if Private.hasSpecializations then
+        tinsert(events, "PLAYER_SPECIALIZATION_CHANGED")
+      end
       return {
         ["events"] = events
       }
@@ -10082,7 +10186,7 @@ Private.event_prototypes = {
         store = true,
         hidden = true,
         test = "true",
-        init = "raidMarkIndex > 0 and '{rt'..raidMarkIndex..'}' or ''"
+        init = "not Private.ExecEnv.IsSecret(raidMarkIndex) and raidMarkIndex > 0 and '{rt'..raidMarkIndex..'}' or ''"
       },
       {
         name = "nameplateType",
@@ -11229,6 +11333,10 @@ Private.event_prototypes = {
         tinsert(events, "PLAYER_MOVING_UPDATE");
       end
 
+      if trigger.use_restricted ~= nil then
+        tinsert(events, "WA_RESTRICTION_CHANGED")
+      end
+
       if trigger.use_instance_difficulty ~= nil
         or trigger.use_instance_type ~= nil
         or trigger.use_instance_size ~= nil
@@ -11268,6 +11376,13 @@ Private.event_prototypes = {
         display = L["In Combat"],
         type = "tristate",
         init = "UnitAffectingCombat('player')"
+      },
+      {
+        name = "restricted",
+        display = L["Secret Restrictions Active"],
+        desc = L["The game hides combat data from addons: in combat, boss encounters and PvP matches."],
+        type = "tristate",
+        init = "WeakAuras.IsRestricted()",
       },
       {
         name = "pvpflagged",
@@ -12373,6 +12488,494 @@ if not WeakAuras.IsClassicOrTBCOrWrathOrCataOrMists() and C_AssistedCombat and C
 end
 
 if WeakAuras.IsClassicEra() then
+  -- Sum of every projectile stack in the bags, whatever the ammo type
+  Private.ExecEnv.GetCarriedAmmoCount = function()
+    local total = 0
+    if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo) then
+      return total
+    end
+    for bag = 0, NUM_BAG_SLOTS or 4 do
+      for slot = 1, C_Container.GetContainerNumSlots(bag) or 0 do
+        local info = C_Container.GetContainerItemInfo(bag, slot)
+        if info and info.itemID and select(6, C_Item.GetItemInfoInstant(info.itemID)) == 6 then -- Enum.ItemClass.Projectile
+          total = total + (info.stackCount or 0)
+        end
+      end
+    end
+    return total
+  end
+
+  -- The ammo equipped in the ammo slot, and how many of it the bags hold
+  Private.event_prototypes["Ammo"] = {
+    type = "item",
+    events = {
+      ["events"] = {
+        "BAG_UPDATE_DELAYED",
+        "PLAYER_EQUIPMENT_CHANGED",
+      },
+      ["unit_events"] = {
+        ["player"] = {"UNIT_INVENTORY_CHANGED"}
+      }
+    },
+    internal_events = { "WA_DELAYED_PLAYER_ENTERING_WORLD", },
+    force_events = "UNIT_INVENTORY_CHANGED",
+    name = L["Ammo"],
+    init = function(trigger)
+      return [[
+        local itemId = GetInventoryItemID("player", INVSLOT_AMMO)
+        local count = itemId and GetInventoryItemCount("player", INVSLOT_AMMO) or 0
+        local carried = Private.ExecEnv.GetCarriedAmmoCount()
+      ]]
+    end,
+    GetNameAndIcon = function(trigger)
+      return L["Ammo"], GetInventoryItemTexture("player", INVSLOT_AMMO)
+    end,
+    statesParameter = "one",
+    hasItemID = true,
+    args = {
+      {
+        name = "count",
+        display = L["Count"],
+        type = "number",
+        init = "count",
+        store = true,
+        conditionType = "number",
+      },
+      {
+        name = "carried",
+        display = L["Total Carried"],
+        type = "number",
+        init = "carried",
+        store = true,
+        conditionType = "number",
+      },
+      {
+        name = "ammoItem",
+        display = L["Ammo Item"],
+        type = "item",
+        multiEntry = {
+          operator = "or"
+        },
+        test = "itemId == tonumber([[%s]])",
+        only_exact = true,
+      },
+      {
+        name = "stacks",
+        init = "count",
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+      {
+        name = "value",
+        init = "count",
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+      {
+        name = "total",
+        init = 0,
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+      {
+        name = "progressType",
+        init = "'static'",
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+      {
+        name = "itemId",
+        display = L["ItemId"],
+        init = "itemId",
+        hidden = true,
+        store = true,
+        test = "true",
+        conditionType = "number",
+        operator_types = "only_equal",
+      },
+      {
+        name = "name",
+        init = "itemId and C_Item.GetItemNameByID(itemId)",
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+      {
+        name = "icon",
+        init = "GetInventoryItemTexture('player', INVSLOT_AMMO)",
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+    },
+    automaticrequired = true,
+    progressType = "static"
+  }
+
+  -- Free slots of the carried bags. Quivers, ammo pouches and soul bags only hold one kind of item,
+  -- so they only count with includeSpecialty
+  Private.ExecEnv.GetBagSpace = function(includeSpecialty)
+    local free, total = 0, 0
+    if not (C_Container and C_Container.GetContainerNumFreeSlots and C_Container.GetContainerNumSlots) then
+      return free, total
+    end
+    for bag = 0, NUM_BAG_SLOTS or 4 do
+      local bagFree, bagFamily = C_Container.GetContainerNumFreeSlots(bag)
+      if bagFamily == 0 or (includeSpecialty and bagFamily) then
+        free = free + (bagFree or 0)
+        total = total + (C_Container.GetContainerNumSlots(bag) or 0)
+      end
+    end
+    return free, total
+  end
+
+  Private.event_prototypes["Bag Space"] = {
+    type = "item",
+    events = {
+      ["events"] = { "BAG_UPDATE_DELAYED" }
+    },
+    internal_events = { "WA_DELAYED_PLAYER_ENTERING_WORLD", },
+    force_events = "BAG_UPDATE_DELAYED",
+    name = L["Bag Space"],
+    init = function(trigger)
+      return ([[
+        local free, total = Private.ExecEnv.GetBagSpace(%s)
+      ]]):format(trigger.use_includeSpecialty and "true" or "false")
+    end,
+    GetNameAndIcon = function(trigger)
+      return L["Bag Space"], "Interface\\Icons\\INV_Misc_Bag_08"
+    end,
+    statesParameter = "one",
+    args = {
+      {
+        name = "includeSpecialty",
+        display = L["Include Specialty Bags"],
+        type = "toggle",
+        test = "true",
+      },
+      {
+        name = "free",
+        display = L["Free Slots"],
+        type = "number",
+        init = "free",
+        store = true,
+        conditionType = "number",
+      },
+      {
+        name = "used",
+        display = L["Used Slots"],
+        type = "number",
+        init = "total - free",
+        store = true,
+        conditionType = "number",
+      },
+      {
+        name = "stacks",
+        init = "free",
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+      {
+        name = "value",
+        init = "free",
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+      {
+        name = "name",
+        init = ("%q"):format(L["Bag Space"]),
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+      {
+        name = "icon",
+        init = "'Interface\\\\Icons\\\\INV_Misc_Bag_08'",
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+      {
+        name = "total",
+        init = "total",
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+      {
+        name = "progressType",
+        init = "'static'",
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+    },
+    automaticrequired = true,
+    progressType = "static"
+  }
+
+  -- Durability of the equipped items in percent: the most damaged item, all items together, and the broken
+  -- item count. One slot only when slot is set. 100 without any item that has durability.
+  Private.ExecEnv.GetEquipmentDurability = function(slot)
+    local lowest, broken, current, maximum = 100, 0, 0, 0
+    if not GetInventoryItemDurability then
+      return lowest, lowest, broken
+    end
+    -- The ammo slot (0) has no durability: all slots instead
+    if slot and slot < (INVSLOT_FIRST_EQUIPPED or 1) then
+      slot = nil
+    end
+    for itemSlot = slot or INVSLOT_FIRST_EQUIPPED or 1, slot or INVSLOT_LAST_EQUIPPED or 19 do
+      local itemCurrent, itemMaximum = GetInventoryItemDurability(itemSlot)
+      if itemCurrent and itemMaximum and itemMaximum > 0 then
+        lowest = math.min(lowest, itemCurrent / itemMaximum * 100)
+        current, maximum = current + itemCurrent, maximum + itemMaximum
+        if itemCurrent == 0 then
+          broken = broken + 1
+        end
+      end
+    end
+    return lowest, maximum > 0 and current / maximum * 100 or 100, broken
+  end
+
+  Private.event_prototypes["Equipment Durability"] = {
+    type = "item",
+    events = {
+      ["events"] = { "UPDATE_INVENTORY_DURABILITY", "PLAYER_EQUIPMENT_CHANGED" }
+    },
+    internal_events = { "WA_DELAYED_PLAYER_ENTERING_WORLD", },
+    force_events = "UPDATE_INVENTORY_DURABILITY",
+    name = L["Equipment Durability"],
+    init = function(trigger)
+      return ([[
+        local lowest, overall, broken = Private.ExecEnv.GetEquipmentDurability(%s)
+        local progress = %s
+      ]]):format(trigger.use_durabilitySlot and tonumber(trigger.durabilitySlot) or "nil",
+                 trigger.durabilityProgress == "lowest" and "lowest" or "overall")
+    end,
+    GetNameAndIcon = function(trigger)
+      return L["Equipment Durability"], "Interface\\Icons\\Trade_BlackSmithing"
+    end,
+    statesParameter = "one",
+    args = {
+      {
+        name = "durabilitySlot",
+        display = L["Equipment Slot"],
+        type = "select",
+        values = "item_slot_types",
+        test = "true",
+      },
+      {
+        name = "durabilityProgress",
+        display = L["Progress Value"],
+        type = "select",
+        values = "durability_progress_types",
+        required = true,
+        default = "overall",
+        test = "true",
+      },
+      {
+        name = "lowest",
+        display = L["Lowest Item Durability (%)"],
+        type = "number",
+        init = "lowest",
+        store = true,
+        conditionType = "number",
+      },
+      {
+        name = "overall",
+        display = L["Overall Durability (%)"],
+        type = "number",
+        init = "overall",
+        store = true,
+        conditionType = "number",
+      },
+      {
+        name = "broken",
+        display = L["Broken Items"],
+        type = "number",
+        init = "broken",
+        store = true,
+        conditionType = "number",
+      },
+      {
+        name = "value",
+        init = "progress",
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+      {
+        name = "name",
+        init = ("%q"):format(L["Equipment Durability"]),
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+      {
+        name = "icon",
+        init = "'Interface\\\\Icons\\\\Trade_BlackSmithing'",
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+      {
+        name = "total",
+        init = 100,
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+      {
+        name = "progressType",
+        init = "'static'",
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+    },
+    automaticrequired = true,
+    progressType = "static"
+  }
+
+  -- Role assigned to the player in the group finder or by the group leader
+  Private.event_prototypes["Role"] = {
+    type = "unit",
+    events = {
+      ["events"] = { "PLAYER_ROLES_ASSIGNED", "ROLE_CHANGED_INFORM", "GROUP_ROSTER_UPDATE" }
+    },
+    internal_events = { "WA_DELAYED_PLAYER_ENTERING_WORLD", },
+    force_events = "PLAYER_ROLES_ASSIGNED",
+    name = L["Role"],
+    init = function(trigger)
+      return [[
+        local role = UnitGroupRolesAssigned("player")
+        if Private.IsSecret(role) or role == "NONE" then
+          role = nil
+        end
+      ]]
+    end,
+    statesParameter = "one",
+    args = {
+      {
+        name = "role",
+        display = L["Role"],
+        type = "select",
+        values = "role_types",
+        init = "role",
+        store = true,
+        conditionType = "select",
+      },
+      {
+        hidden = true,
+        test = "role ~= nil",
+      },
+    },
+    automaticrequired = true,
+    progressType = "none"
+  }
+
+  -- First active minimap tracking among spellIDs (any tracking when the list is empty)
+  Private.ExecEnv.GetActiveTracking = function(spellIDs)
+    if not (C_Minimap and C_Minimap.GetNumTrackingTypes and C_Minimap.GetTrackingInfo) then
+      return false
+    end
+    for index = 1, C_Minimap.GetNumTrackingTypes() or 0 do
+      local info = C_Minimap.GetTrackingInfo(index)
+      if info and info.active and (not spellIDs[1] or tIndexOf(spellIDs, info.spellID)) then
+        return true, info.spellID, info.name, info.texture
+      end
+    end
+    return false
+  end
+
+  Private.event_prototypes["Tracking"] = {
+    type = "unit",
+    events = {
+      ["events"] = { "MINIMAP_UPDATE_TRACKING" }
+    },
+    internal_events = { "WA_DELAYED_PLAYER_ENTERING_WORLD", },
+    force_events = "MINIMAP_UPDATE_TRACKING",
+    name = L["Tracking"],
+    init = function(trigger)
+      local spellIDs = {}
+      if trigger.use_trackingSpell then
+        local entries = type(trigger.trackingSpell) == "table" and trigger.trackingSpell or { trigger.trackingSpell }
+        for _, entry in ipairs(entries) do
+          if tonumber(entry) then
+            tinsert(spellIDs, tonumber(entry))
+          end
+        end
+      end
+      return ([[
+        local found, spellId, name, icon = Private.ExecEnv.GetActiveTracking({%s})
+        local inverse = %s
+      ]]):format(table.concat(spellIDs, ", "), trigger.use_inverse and "true" or "false")
+    end,
+    GetNameAndIcon = function(trigger)
+      local spellID = type(trigger.trackingSpell) == "table" and trigger.trackingSpell[1] or trigger.trackingSpell
+      if trigger.use_trackingSpell and tonumber(spellID) then
+        return Private.ExecEnv.GetSpellName(tonumber(spellID)), Private.ExecEnv.GetSpellIcon(tonumber(spellID))
+      end
+      return L["Tracking"], "Interface\\Minimap\\Tracking\\None"
+    end,
+    statesParameter = "one",
+    args = {
+      {
+        name = "trackingSpell",
+        display = L["Tracking Spell"],
+        type = "spell",
+        multiEntry = {
+          operator = "or"
+        },
+        test = "true",
+        only_exact = true,
+      },
+      {
+        name = "inverse",
+        display = L["Inverse"],
+        type = "toggle",
+        test = "true",
+      },
+      {
+        hidden = true,
+        test = "found ~= inverse",
+      },
+      {
+        name = "spellId",
+        display = L["Spell ID"],
+        init = "spellId",
+        hidden = true,
+        store = true,
+        test = "true",
+        conditionType = "number",
+        operator_types = "only_equal",
+      },
+      {
+        name = "name",
+        init = "name",
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+      {
+        name = "icon",
+        init = "icon",
+        hidden = true,
+        store = true,
+        test = "true",
+      },
+    },
+    automaticrequired = true,
+    progressType = "none"
+  }
+
   Private.event_prototypes["Alternate Power"] = nil
   Private.event_prototypes["Currency"] = nil
   Private.event_prototypes["Death Knight Rune"] = nil
@@ -12392,7 +12995,9 @@ if WeakAuras.IsClassicOrTBCOrWrathOrCata() then
   if not UnitDetailedThreatSituation then
     Private.event_prototypes["Threat Situation"] = nil
   end
-  Private.event_prototypes["Class/Spec"] = nil
+  if not Private.hasSpecializations then
+    Private.event_prototypes["Class/Spec"] = nil
+  end
   Private.event_prototypes["Equipment Set"] = nil
   Private.event_prototypes["Evoker Essence"] = nil
   Private.event_prototypes["Loot Specialization"] = nil

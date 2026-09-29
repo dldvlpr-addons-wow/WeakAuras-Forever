@@ -13,12 +13,13 @@ Classic Era, SoD or Retail will not work as they are:
 
 - Auras that read the combat log (CLEU triggers, "Combat Log" events) never
   fire. The combat log is closed to addons on this engine.
-- Most combat data is hidden from addons during combat: buffs, casts,
-  cooldowns and unit information can be unreadable until combat ends.
-  Aura triggers pause in combat and update when it ends.
+- Most combat data is hidden from addons during combat. WeakAuras Forever
+  lets the game draw it (timers, bars, texts set to only `%p` or `%s`), but conditions
+  and thresholds on that data wait until combat ends.
 - Some old game functions no longer exist. Custom code calling them errors
   and must be updated to the modern C_ API (`C_Spell`, `C_UnitAuras`, `C_Item`...).
-- Talent load options are empty, and spells must be entered by ID.
+- Talent load options are empty (use the Class and Specialization load option), and
+  spells must be entered by ID.
 
 In short: expect to adapt most of the auras you import, especially the ones
 with custom code. Damage taken, for example, works through `UNIT_COMBAT:player`
@@ -26,6 +27,9 @@ instead of the combat log.
 
 Read the [tutorial](TUTORIAL.md): how WeakAuras works on Forever, and
 step-by-step recipes for auras that keep working in combat.
+
+Coming from ForeverAuras? Paste your exported strings in the import window:
+they are converted (tutorial, section 10).
 
 ## Installation
 

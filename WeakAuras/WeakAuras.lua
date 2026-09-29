@@ -181,6 +181,9 @@ function Private.PrintHelp()
   print(L["/wa help - Show this message"])
   print(L["/wa minimap - Toggle the minimap icon"])
   print("/wa tutorial - How to create auras on WoW Forever, with two examples")
+  if C_CooldownViewer then
+    print("/wa cdm - Show or hide the Blizzard Cooldown Manager")
+  end
   print(L["/wa pstart - Start profiling. Optionally include a duration in seconds after which profiling automatically stops. To profile the next combat/encounter, pass a \"combat\" or \"encounter\" argument."])
   print(L["/wa pstop - Finish profiling"])
   print(L["/wa pprint - Show the results from the most recent profiling"])
@@ -214,6 +217,8 @@ function SlashCmdList.WEAKAURAS(input)
     Private.ShowForeverTutorial()
   elseif msg == "minimap" then
     WeakAuras.ToggleMinimap();
+  elseif msg == "cdm" and C_CooldownViewer and Private.ToggleCooldownManager then
+    Private.ToggleCooldownManager()
   elseif msg == "help" then
     Private.PrintHelp();
   elseif msg == "repair" then
@@ -264,6 +269,17 @@ function SlashCmdList.WEAKAURAS(input)
 end
 
 if not WeakAuras.IsLibsOK() then return end
+
+-- The Cooldown Manager follows this CVar itself, and shows again when it is set back
+function Private.ToggleCooldownManager()
+  if InCombatLockdown() then
+    prettyPrint(L["Cannot change the Cooldown Manager in combat."])
+    return
+  end
+  local enabled = C_CVar.GetCVarBool("cooldownViewerEnabled")
+  C_CVar.SetCVar("cooldownViewerEnabled", enabled and "0" or "1")
+  prettyPrint(enabled and L["Blizzard Cooldown Manager hidden."] or L["Blizzard Cooldown Manager shown."])
+end
 
 function WeakAuras.ToggleMinimap()
   WeakAurasSaved.minimap.hide = not WeakAurasSaved.minimap.hide
@@ -1734,6 +1750,9 @@ local function scanForLoadsImpl(toCheck, event, arg1, ...)
 
   if WeakAuras.IsCataOrMistsOrRetail() then
     specId, role, position = Private.LibSpecWrapper.SpecRolePositionForUnit("player")
+  elseif Private.hasSpecializations then
+    local specIndex = Private.ExecEnv.GetSpecialization()
+    specId = specIndex and Private.ExecEnv.GetSpecializationInfo(specIndex) or false
   end
   if WeakAuras.IsMistsOrRetail() then
     inPetBattle = C_PetBattles.IsInBattle()
@@ -1778,9 +1797,13 @@ local function scanForLoadsImpl(toCheck, event, arg1, ...)
     if (data and not data.controlledChildren) then
       local loadFunc = loadFuncs[id];
       local loadOpt = loadFuncsForOptions[id];
-      if WeakAuras.IsClassicEra() then
-        shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, vehicle, mounted, hardcore, runeEngraving, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size)
-        couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, vehicle, mounted, hardcore, runeEngraving, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size)
+      if Private.hasSpecializations then
+        -- Classic Era with the class_and_spec load option, see Private.load_prototype
+        shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, vehicle, mounted, hardcore, runeEngraving, class, specId, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficultyIndex)
+        couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, vehicle, mounted, hardcore, runeEngraving, class, specId, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficultyIndex)
+      elseif WeakAuras.IsClassicEra() then
+        shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, vehicle, mounted, hardcore, runeEngraving, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficultyIndex)
+        couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, vehicle, mounted, hardcore, runeEngraving, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficultyIndex)
       elseif WeakAuras.IsTBC() then
         shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, vehicle, vehicleUi, mounted, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
         couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, vehicle, vehicleUi, mounted, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
@@ -1894,6 +1917,9 @@ else
   loadFrame:RegisterEvent("CHARACTER_POINTS_CHANGED")
   loadFrame:RegisterEvent("PLAYER_TALENT_UPDATE");
   loadFrame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED");
+  if Private.hasSpecializations then
+    loadFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+  end
 end
 
 if WeakAuras.IsTBCOrWrathOrCataOrMists() then
@@ -4337,7 +4363,7 @@ do
 end
 
 function WeakAuras.GetAuraInstanceTooltipInfo(unit, auraInstanceId, filter)
-  if WeakAuras.IsRetail() then
+  if Private.hasAuraInstanceAPI then
     local tooltipText = ""
     local tooltipData
     if filter == "HELPFUL" then
@@ -5078,11 +5104,20 @@ local function ScrubSecretState(state)
     last = {}
     lastReadableState[state] = last
   end
+  -- A secret progress stays drawable by native widgets, see state.secretValue
+  if issecretvalue(state.value) or issecretvalue(state.total) then
+    state.secretValue, state.secretTotal = state.value, state.total
+  else
+    state.secretValue, state.secretTotal = nil, nil
+  end
   for key, value in pairs(state) do
-    if issecretvalue(value) then
-      state[key] = last[key]
-    else
-      last[key] = value
+    -- Kept secret for native widgets: progress, and the stack text and icon of BuffTrigger2
+    if key ~= "secretValue" and key ~= "secretTotal" and key ~= "secretStacks" and key ~= "secretIcon" then
+      if issecretvalue(value) then
+        state[key] = last[key]
+      else
+        last[key] = value
+      end
     end
   end
 end

@@ -2499,6 +2499,19 @@ function Private.Modernize(data, oldSnapshot)
     end
   end
 
+  -- WoW Forever: the Swing Timer Target In Range option went from yes/no to In Range/Out of Range, within
+  -- version 90. A boolean value is the old option, so this runs once per aura.
+  if data.triggers then
+    for _, triggerData in ipairs(data.triggers) do
+      local trigger = triggerData.trigger
+      if trigger and trigger.event == "Swing Timer" and type(trigger.inRange) ~= "string"
+         and trigger.use_inRange ~= nil then
+        trigger.inRange = trigger.use_inRange and "inRange" or "outOfRange"
+        trigger.use_inRange = true
+      end
+    end
+  end
+
   data.internalVersion = max(data.internalVersion or 0, WeakAuras.InternalVersion())
 end
 

@@ -2,7 +2,8 @@ name: Release
 
 # Pushing a tag (e.g. 5.22.0-forever.1) builds the zip with the BigWigs packager
 # and publishes it as a GitHub release.
-# CurseForge and Wago are skipped: the .toc files carry no project ID.
+# CurseForge and Wago are skipped until the .toc files carry a project ID
+# (## X-Curse-Project-ID, ## X-Wago-ID) and the CF_API_KEY and WAGO_API_TOKEN secrets exist.
 
 on:
   push:
@@ -15,6 +16,8 @@ jobs:
       contents: write
     env:
       GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+      CF_API_KEY: ${{ secrets.CF_API_KEY }}
+      WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:

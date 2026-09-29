@@ -36,6 +36,13 @@ local function createOptions(parentData, data, index, subIndex)
       hasAlpha = true,
       order = 4,
     },
+    border_dispelColor = {
+      type = "toggle",
+      width = WeakAuras.normalWidth,
+      name = L["Color by Dispel Type"],
+      desc = L["Uses the dispel type color of the aura shown, and the border color when it has none."],
+      order = 4.5,
+    },
     border_offset = {
       type = "range",
       control = "WeakAurasSpinBox",

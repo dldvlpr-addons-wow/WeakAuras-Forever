@@ -426,6 +426,39 @@ local function GetBuffTriggerOptions(data, triggernum)
           and not trigger.useName and not trigger.useExactSpellId)
       end
     },
+    useNativeFilter = {
+      type = "toggle",
+      width = WeakAuras.doubleWidth,
+      name = L["Native Filter"],
+      desc = L["Filters with the aura categories of the game. They work in combat too: without a name or spell ID filter and any other filter, auras applied in combat show, with the icon, timer and stack text drawn by the game."],
+      order = 11.5,
+      hidden = function()
+        return not (trigger.type == "aura2" and trigger.unit ~= "multi" and CanHaveMatchCheck(trigger)
+                    and C_UnitAuras and C_UnitAuras.IsAuraFilteredOutByInstanceID)
+      end
+    },
+    nativeFilter = {
+      type = "multiselect",
+      width = WeakAuras.normalWidth,
+      name = L["Is"],
+      order = 11.6,
+      hidden = function()
+        return not (trigger.type == "aura2" and trigger.unit ~= "multi" and CanHaveMatchCheck(trigger)
+                    and trigger.useNativeFilter and C_UnitAuras and C_UnitAuras.IsAuraFilteredOutByInstanceID)
+      end,
+      values = OptionsPrivate.Private.aura_native_filter_types,
+    },
+    nativeFilterNot = {
+      type = "multiselect",
+      width = WeakAuras.normalWidth,
+      name = L["Is Not"],
+      order = 11.7,
+      hidden = function()
+        return not (trigger.type == "aura2" and trigger.unit ~= "multi" and CanHaveMatchCheck(trigger)
+                    and trigger.useNativeFilter and C_UnitAuras and C_UnitAuras.IsAuraFilteredOutByInstanceID)
+      end,
+      values = OptionsPrivate.Private.aura_native_filter_types,
+    },
     useName = {
       type = "toggle",
       name = L["Name(s)"],
@@ -581,6 +614,40 @@ local function GetBuffTriggerOptions(data, triggernum)
       name = "",
       order = 61.3,
       hidden = function() return not (trigger.type == "aura2" and trigger.unit ~= "multi" and CanHaveMatchCheck(trigger) and not trigger.useRem) end
+    },
+    useElapsed = {
+      type = "toggle",
+      width = WeakAuras.normalWidth,
+      name = L["Elapsed Time"],
+      desc = L["Time since the aura was applied. Auras without duration never match."],
+      hidden = function() return not (trigger.type == "aura2" and trigger.unit ~= "multi" and CanHaveMatchCheck(trigger)) end,
+      order = 61.31
+    },
+    elapsedOperator = {
+      type = "select",
+      name = L["Operator"],
+      order = 61.32,
+      width = WeakAuras.halfWidth,
+      values = OptionsPrivate.Private.operator_types,
+      disabled = function() return not trigger.useElapsed end,
+      hidden = function() return not (trigger.type == "aura2" and trigger.unit ~= "multi" and CanHaveMatchCheck(trigger) and trigger.useElapsed) end,
+      get = function() return trigger.useElapsed and trigger.elapsedOperator or nil end
+    },
+    elapsed = {
+      type = "input",
+      name = L["Elapsed Time"],
+      validate = ValidateNumeric,
+      order = 61.33,
+      width = WeakAuras.halfWidth,
+      hidden = function() return not (trigger.type == "aura2" and trigger.unit ~= "multi" and CanHaveMatchCheck(trigger) and trigger.useElapsed) end,
+      get = function() return trigger.useElapsed and trigger.elapsed or nil end
+    },
+    useElapsedSpace = {
+      type = "description",
+      width = WeakAuras.normalWidth,
+      name = "",
+      order = 61.34,
+      hidden = function() return not (trigger.type == "aura2" and trigger.unit ~= "multi" and CanHaveMatchCheck(trigger) and not trigger.useElapsed) end
     },
     useTotal = {
       type = "toggle",
@@ -1440,6 +1507,31 @@ local function GetBuffTriggerOptions(data, triggernum)
                     true, false, "spellid", 22, "useExactSpellId", "auraspellids",
                     L["Spell ID"], L["Enter a Spell ID. You can use the addon idTip to determine spell ids."],
                     IsSingleMissing(trigger))
+
+  if C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet then
+    -- Adds the aura spell IDs of a buff tracked by the Cooldown Manager
+    aura_options.cooldownManagerAura = {
+      type = "select",
+      width = WeakAuras.doubleWidth,
+      name = L["From the Cooldown Manager"],
+      desc = L["Adds the spell IDs of a buff tracked by the Cooldown Manager."],
+      order = 22.99,
+      values = OptionsPrivate.Private.GetCooldownManagerAuras,
+      hidden = function() return not (trigger.type == "aura2" and trigger.useExactSpellId) end,
+      get = function() return nil end,
+      set = function(info, cooldownID)
+        trigger.auraspellids = trigger.auraspellids or {}
+        for _, spellID in ipairs(OptionsPrivate.Private.GetCooldownManagerAuraSpellIDs(cooldownID)) do
+          if not tContains(trigger.auraspellids, tostring(spellID)) then
+            tinsert(trigger.auraspellids, tostring(spellID))
+          end
+        end
+        WeakAuras.Add(data)
+        WeakAuras.UpdateThumbnail(data)
+        WeakAuras.ClearAndUpdateOptions(data.id)
+      end,
+    }
+  end
 
   CreateNameOptions(aura_options, data, triggernum, ignoreNameOptionSize,
                     false, true, "ignorename", 32, "useIgnoreName", "ignoreAuraNames",

@@ -530,6 +530,9 @@ function WeakAuras.Import(inData, target, callbackFunc, linkedAuras)
     return nil, "Invalid import data."
   end
 
+  -- Before the version check: ForeverAuras exports carry a higher internal version
+  Private.ConvertForeverAurasImport(data, children)
+
   local highestVersion = data.internalVersion or 0
   if children then
     for _, child in ipairs(children) do

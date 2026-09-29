@@ -51,12 +51,17 @@ Out of combat, almost everything works like before.
 
 ### What WeakAuras Forever does with secret data
 
-- An aura that receives secret data **keeps its last known state**. It does not show errors.
-- When combat ends, auras read the data again and update.
-- Cooldown auras also update again when combat ends.
+Not all of this has been confirmed in game yet.
 
-So a buff aura that was correct before the pull stays as it was during the fight. It does not follow what
-happens in combat. Plan your auras for that.
+- The game draws what WeakAuras cannot read: the cooldown swipe, the timer bar and the health or power bar
+  keep running with secret data. So does a text element that contains only `%p` (remaining time), or only `%s`
+  (stacks, Aura trigger).
+- Buffs and debuffs applied during combat still show, as long as the game lets addons read them.
+- An Aura trigger filtered only by **Native Filter** (crowd control, important, cast by me...) also shows the
+  auras the game hides: icon, timer and stack text are drawn by the game, the name stays empty.
+- Logic on a secret value (a condition, a threshold, custom code) cannot run: that part **keeps its last known
+  state**, without errors.
+- When the restriction ends, auras read the data again and update.
 
 ### The combat log is closed
 
@@ -68,8 +73,8 @@ Triggers that use the combat log (`CLEU`, "Combat Log") never fire. For damage t
 - **Spells by ID.** Name search in the options may not find spells. Type the spell ID.
   Get the ID of your rank out of combat: `/dump C_Spell.GetSpellInfo("Corruption")`.
   Classic spells have one ID per rank.
-- **Talent load options** are empty.
-- **Swing timer** does not reset on melee hits.
+- **Talent load options** are empty. Use the **Class and Specialization** load option instead.
+- **Swing timer** follows the game's own swing event, with a "Target In Range" option.
 - **Chat Message action** can be blocked during encounters and PvP matches.
 - **Old functions in custom code** no longer exist (`GetSpellInfo`, `GetSpellCooldown`, `UnitBuff`...).
   Use `C_Spell`, `C_UnitAuras`, `C_Item`.
@@ -85,29 +90,35 @@ Not all of this has been checked on Forever yet.
 - Your own casts and your pet's casts: `UNIT_SPELLCAST_SUCCEEDED:player`, `_START`, `_STOP`, `_CHANNEL_START`.
 - Combo points.
 - Your maximum health and maximum power.
-- The global cooldown (spell ID `61304`).
+- The **Global Cooldown** trigger, drawn by the game when it is secret.
+- Swing timer, main hand, off hand and ranged (wand included), and whether the target is in swing range.
 - Target, focus and mouseover checks.
-- Item counts in your bags: ammo, Soul Shards, reagents.
+- Item counts in your bags: ammo, Soul Shards, reagents. The Ammo trigger also gives the total of projectiles.
 - States: in combat, in a group, zone, mounted, resting, stealth, druid form.
 - Encounter start and end: `ENCOUNTER_START`, `ENCOUNTER_END`.
 - Bags, XP, gold, reputation.
 
+**Display in combat, logic out of combat:**
+
+- Buffs and debuffs, yours and your target's: icon and timer keep running, and so do texts that contain only
+  `%p` or only `%s`.
+  Filters on stacks or remaining time use the last readable value.
+- Spell cooldowns: swipe and timer bar keep running. Pick your spells from the Cooldown Manager list in the
+  Cooldown trigger if you want the ones the game tracks.
+- Health, mana, energy and rage bars and their text. Thresholds ("below 30%") use the last readable value.
+- Border color by dispel type (Border element, "Color by Dispel Type").
+
 **Works out of combat only:**
 
-- Buffs, debuffs and spell cooldowns.
 - Weapon enchants (poison, oil, sharpening stone).
-
-**Display only, no logic in combat:**
-
-- Health, mana, energy and rage bars.
 
 **Blocked or limited:**
 
-- Debuffs on your target in combat (DoTs, Sunder Armor, Faerie Fire): frozen until combat ends.
-- Your buffs and cooldowns in combat: frozen until combat ends.
 - Low mana alert, mana or energy tick timer in combat.
 - Other players' casts.
 - Enemy names and IDs in instances.
+
+`/wa cdm` shows or hides the Blizzard Cooldown Manager, out of combat.
 
 ---
 
@@ -332,3 +343,24 @@ Most packs made for Classic Era, Season of Discovery or Retail need work:
 
 Found an aura that should work and does not? Report it:
 https://github.com/dldvlpr-addons-wow/WeakAuras-Forever/issues
+
+---
+
+## 10. Coming from ForeverAuras
+
+Export your auras from ForeverAuras, then paste the strings in the WeakAuras import window. Groups work too.
+WeakAuras Forever converts them on import, and lists in the chat what it could not convert.
+
+| ForeverAuras | WeakAuras Forever |
+| --- | --- |
+| Cooldown Manager trigger, cooldown | Cooldown trigger (spell ID, or name if ForeverAuras used names) |
+| Cooldown Manager trigger, buff | Aura trigger (your buffs, or your debuffs on the target) |
+| Cooldown Manager trigger, item | Item cooldown trigger |
+| Aura (Blizzard) trigger | Aura trigger with Native Filter (sorting removed) |
+| Dispel type icon | Dispel Type Icon sub element |
+| Dispel type border | Border colored by dispel type |
+| Swing Timer, Ammo | Same triggers (Ammo: the item list now filters the equipped ammo) |
+| Role, Tracking, Equipment Durability, Bag Space | Same triggers (Tracking: by spell ID only, no "always" mode) |
+
+Not converted: TimelineParser triggers (they need the ExRT_Reminder addon and a boss timeline, which WoW Forever does not show). A Cooldown Manager cooldown trigger with several spells keeps the first one.
+Do not run both addons at the same time.

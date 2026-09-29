@@ -266,6 +266,16 @@ local anchorAlignment = {
 
 local extraTextureWrapMode = "REPEAT";
 
+-- StatusBar orientation and reverse fill matching the anchors above
+local nativeOrientation = {
+  ["HORIZONTAL"] = { "HORIZONTAL", false },
+  ["HORIZONTAL_INVERSE"] = { "HORIZONTAL", true },
+  ["VERTICAL"] = { "VERTICAL", true },
+  ["VERTICAL_INVERSE"] = { "VERTICAL", false },
+}
+local canDrawDurationObject = Enum.StatusBarTimerDirection ~= nil
+                              and CreateFrame("StatusBar").SetTimerDuration ~= nil
+
 -- Emulate blizzard statusbar with advanced features (more grow directions)
 local barPrototype = {
   ["UpdateAnchors"] = function(self)
@@ -296,6 +306,9 @@ local barPrototype = {
     self.fgMask:ClearAllPoints()
     self.fgMask:SetPoint(self.align1, self, self.align1)
     self.fgMask:SetPoint(self.align2, self, self.align2)
+    if self.nativeBar then
+      self:AnchorMaskToNativeBar()
+    end
 
     self.spark:SetPoint("CENTER", self.fgMask, self.alignSpark, self.spark.sparkOffsetX or 0, self.spark.sparkOffsetY or 0);
 
@@ -312,6 +325,10 @@ local barPrototype = {
   end,
 
   ["UpdateProgress"] = function(self)
+    -- The native StatusBar sizes the mask, see GetNativeBar
+    if self.nativeBar then
+      return
+    end
     -- Limit values
     local value = self.value;
     value = math.max(self.min, value);
@@ -584,6 +601,85 @@ local barPrototype = {
 
   ["GetStatusBarTexture"] = function(self)
     return self.fg:GetAtlas() or self.fg:GetTexture()
+  end,
+
+  -- Values of the 12.x engine can be secret, then only native widgets can draw them.
+  -- An invisible native StatusBar computes the fill, and the foreground mask follows its fill texture,
+  -- so the texture, gradient, spark and everything anchored to the mask keep working.
+  -- self.nativeBar is the StatusBar in use, nil while the bar is drawn in Lua.
+  ["GetNativeBar"] = function(self, kind)
+    self.nativeBars = self.nativeBars or {}
+    local nativeBar = self.nativeBars[kind]
+    if not nativeBar then
+      nativeBar = CreateFrame("StatusBar", nil, self)
+      nativeBar:SetAllPoints(self)
+      nativeBar:SetStatusBarTexture("Interface\\AddOns\\WeakAuras\\Media\\Textures\\Square_FullWhite")
+      nativeBar:GetStatusBarTexture():SetAlpha(0)
+      nativeBar:Hide()
+      self.nativeBars[kind] = nativeBar
+    end
+    return nativeBar
+  end,
+
+  ["ShowNativeBar"] = function(self, nativeBar)
+    if self.nativeBar ~= nativeBar then
+      if self.nativeBar then
+        self.nativeBar:Hide()
+      end
+      self.nativeBar = nativeBar
+      nativeBar:Show()
+      self:AnchorMaskToNativeBar()
+    end
+  end,
+
+  -- Back to the Lua progress, which the caller sets next
+  ["HideNativeBar"] = function(self)
+    if self.nativeBar then
+      self.nativeBar:Hide()
+      self.nativeBar = nil
+      self:UpdateAnchors()
+    end
+  end,
+
+  -- Draws a duration object. Returns false when the client cannot, the caller then draws the bar in Lua.
+  ["SetDurationObject"] = function(self, durationObject, fillElapsed)
+    if not durationObject then
+      self:HideNativeBar()
+      return false
+    end
+    if not canDrawDurationObject then
+      return false
+    end
+    local nativeBar = self:GetNativeBar("timer")
+    nativeBar:SetTimerDuration(durationObject, Enum.StatusBarInterpolation.Immediate,
+      fillElapsed and Enum.StatusBarTimerDirection.ElapsedTime or Enum.StatusBarTimerDirection.RemainingTime)
+    self:ShowNativeBar(nativeBar)
+    return true
+  end,
+
+  -- Draws a secret value, which StatusBar:SetMinMaxValues and SetValue accept
+  ["SetSecretValue"] = function(self, value, total)
+    local nativeBar = self:GetNativeBar("value")
+    nativeBar:SetMinMaxValues(0, total)
+    nativeBar:SetValue(value)
+    self:ShowNativeBar(nativeBar)
+  end,
+
+  ["AnchorMaskToNativeBar"] = function(self)
+    local orientation = nativeOrientation[self.orientation] or nativeOrientation.HORIZONTAL
+    self.nativeBar:SetOrientation(orientation[1])
+    self.nativeBar:SetReverseFill(orientation[2])
+    local fill = self.nativeBar:GetStatusBarTexture()
+    -- The offsets keep the mask from having a zero size, like the Lua progress does
+    self.fgMask:ClearAllPoints()
+    self.fgMask:SetPoint("TOPLEFT", fill, "TOPLEFT", -0.05, 0.05)
+    self.fgMask:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT", 0.05, -0.05)
+    self.fg:Show()
+    if self.spark.sparkHidden == "ALWAYS" then
+      self.spark:Hide()
+    else
+      self.spark:Show()
+    end
   end,
 
   -- Set bar color
@@ -895,12 +991,18 @@ local funcs = {
     end
   end,
   UpdateValue = function(self)
-    local progress = 0;
-    if (self.total ~= 0) then
-      progress = self.value / self.total;
-    end
+    -- A secret value is drawn natively. Inverse would need total - value, which is secret too: Lua path.
+    if type(self.secretValue) == "number" and canDrawDurationObject and not self.inverseDirection then
+      self.bar:SetSecretValue(self.secretValue, self.secretTotal)
+    else
+      local progress = 0;
+      if (self.total ~= 0) then
+        progress = self.value / self.total;
+      end
 
-    self:SetProgress(progress)
+      self.bar:HideNativeBar()
+      self:SetProgress(progress)
+    end
 
     if self.FrameTick then
       self.FrameTick = nil
@@ -908,6 +1010,16 @@ local funcs = {
     end
   end,
   UpdateTime = function(self)
+    -- Duration objects stay drawable when their values are secret
+    if self.durationObject
+       and self.bar:SetDurationObject(self.durationObject, not self.inverse ~= not self.inverseDirection) then
+      if self.FrameTick then
+        self.FrameTick = nil
+        self.subRegionEvents:RemoveSubscriber("FrameTick", self)
+      end
+      return
+    end
+    self.bar:SetDurationObject(nil)
     local remaining = self.expirationTime - GetTime();
     local progress = self.duration ~= 0 and remaining / self.duration or 0;
     if self.inverse then
@@ -938,6 +1050,11 @@ local funcs = {
       self.bar:SetValue(1 - self.bar:GetValue());
     end
     self.bar:SetAdditionalBarsInverse(not self.bar:GetAdditionalBarsInverse())
+    if type(self.secretValue) == "number" then
+      self:UpdateValue()
+    elseif self.bar.nativeBar then
+      self:UpdateTime()
+    end
     self.subRegionEvents:Notify("InverseChanged")
   end,
   SetOrientation = function(self, orientation)

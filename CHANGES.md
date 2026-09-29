@@ -8,6 +8,158 @@ Modifications: dldvlpr, GPL-2.0.
 
 This file lists every file changed from the upstream 5.22.0 release, as required by GPL-2.0 section 2a.
 
+## 2026-09-29
+
+### Added
+- `.luacheckrc`: luacheck checks syntax and global variables only. Every global the addons use is listed, so a new
+  one (a typo, or an API not checked on WoW Forever) is reported. `.github/workflows/lint.yml` runs it on every push
+  and pull request.
+
+### Changed
+- `WeakAuras/Init.lua`: `Private.IsRestricted(kind, ...)` asks `C_Secrets` whether auras, cooldowns, a spell
+  cooldown, unit stats or unit identity are secret, and returns `nil` when the client cannot tell.
+  `WeakAuras.IsRestricted()` is true while aura or cooldown data is secret (in combat without `C_Secrets`).
+  The `RestrictionChanged` callback fires when that state changes. `Private.IsDurationObject(value)`.
+- `WeakAuras/BuffTrigger2.lua`: aura triggers paused on secret data are rescanned when the restriction ends,
+  instead of at the end of combat only.
+- `WeakAuras/GenericTrigger.lua`: cooldowns are checked again when the restriction ends.
+- `WeakAuras/RegionTypes/RegionPrototype.lua`: a timed trigger state can carry a `durationObject` (a duration object
+  of the 12.x engine). Regions receive it with the trigger's main timer, unless the timer is paused or min or max
+  progress is adjusted.
+- `WeakAuras/RegionTypes/Icon.lua`: the cooldown swipe draws a `durationObject` with
+  `SetCooldownFromDurationObject`, so it keeps running when the duration is secret.
+- `WeakAuras/RegionTypes/AuraBar.lua`: an invisible native `StatusBar` runs a `durationObject` with
+  `SetTimerDuration`, and the bar foreground mask follows its fill, so the bar keeps running when the duration is
+  secret. In that mode the spark is shown unless it is set to always hidden.
+- `WeakAuras/GenericTrigger.lua`: `WeakAuras.GetSpellCooldownDurationObject(id, showgcd, ignoreSpellKnown, track)`
+  returns the duration object of `C_Spell.GetSpellCooldownDuration` (or `C_Spell.GetSpellChargeDuration` for charges)
+  while the spell cooldown is secret. Spells with a secret cooldown send `SPELL_COOLDOWN_CHANGED` on every check.
+  A `SPELL_UPDATE_COOLDOWN` with a secret payload checks every spell once on the next frame, instead of on every
+  event. `WeakAuras/RegionTypes/Icon.lua`: the swipe of a duration object restarts only when its direction changes.
+- `WeakAuras/Init.lua`: `Private.hasAuraInstanceAPI`, true when the aura instance API is available (Retail and the
+  12.x engine). `WeakAuras/BuffTrigger2.lua` and `WeakAuras.GetAuraInstanceTooltipInfo` (`WeakAuras/WeakAuras.lua`)
+  use it instead of `WeakAuras.IsRetail()`, so aura triggers handle `UNIT_AURA` incrementally by `auraInstanceID`.
+- `WeakAuras/BuffTrigger2.lua`: while aura data is secret, `UNIT_AURA` no longer reads its payload. Once per frame,
+  the auras already matched get a `durationObject` from `C_UnitAuras.GetAuraDuration`, and the ones that no longer
+  exist are removed. Auras applied during the restriction, stacks and other fields are only read when it ends.
+- `WeakAuras/Prototypes.lua`: the "Cooldown/Charges/Count" trigger sets `state.durationObject`, so its icon swipe and
+  bar keep running in combat. Showing only on cooldown or when ready, and tracking a specific charge, still use the
+  last readable cooldown.
+- `WeakAuras/WeakAuras.lua`: when `value` or `total` of a trigger state is secret, both are also kept in
+  `state.secretValue` and `state.secretTotal`, which are not scrubbed. `WeakAuras/RegionTypes/RegionPrototype.lua`
+  passes them to regions with the main progress, unless min or max progress is adjusted.
+  `WeakAuras/RegionTypes/AuraBar.lua` draws them with an invisible native `StatusBar` (`SetMinMaxValues`,
+  `SetValue`), like duration objects, so health and power bars keep moving in combat. An inverted bar still shows the
+  last readable value.
+- `WeakAuras/Init.lua`, `WeakAuras/GenericTrigger.lua`, `WeakAuras/Prototypes.lua`: generated trigger code no longer
+  errors on secret health or power without a threshold: the state store compares secret values without reading
+  them, percent and deficit are `nil` while value or total is secret, and a secret raid marker is ignored. A
+  threshold on a secret value (for example health >= 1000) still errors.
+- `WeakAuras/GenericTrigger.lua`: without combat log, a trigger that errors keeps its last state instead of being
+  untriggered, as described on 2026-09-28. Before, a trigger with automatic hiding was hidden.
+- `WeakAuras/GenericTrigger.lua`: without combat log, the options warn about combat log triggers and CLEU events,
+  which never fire, and about thresholds of Health and Power triggers, which cannot be checked on secret values.
+- `WeakAuras/BuffTrigger2.lua`: an aura update that fails on secret data no longer stops the profiler from counting
+  that aura.
+- `WeakAuras/Compatibility.lua`: `Private.hasSpecializations`, true on Classic Era when the client has
+  `C_SpecializationInfo` (WoW Forever). `WeakAuras/Types.lua`, `WeakAuras/Prototypes.lua`, `WeakAuras/WeakAuras.lua`:
+  in that case the "Class and Specialization" load option and the "Class and Specialization" trigger are available,
+  and loads are checked again on `PLAYER_SPECIALIZATION_CHANGED`.
+- `WeakAuras/Prototypes.lua`: "Ammo" trigger on Classic Era, with the count, name and icon of the ammo in the ammo
+  slot. `.luacheckrc`: `INVSLOT_AMMO`.
+- `WeakAuras/Init.lua`: `Private.IsRestricted("auraInstance", unit, auraInstanceID)`.
+  `WeakAuras/BuffTrigger2.lua`: while aura data is secret, auras applied during the restriction are listed with
+  `C_UnitAuras.GetUnitAuraInstanceIDs`, and the ones that `C_Secrets.ShouldUnitAuraInstanceBeSecret` reports as
+  readable are handled right away. The matched auras also get their stack text from
+  `C_UnitAuras.GetAuraApplicationDisplayCount`, kept in `state.secretStacks` (`WeakAuras/WeakAuras.lua` does not scrub
+  it).
+- `WeakAuras/SubRegionTypes/SubText.lua`: a text that is only `%p` is drawn by a `C_DurationUtil` duration text
+  binding when the region has a `durationObject`, and a text that is only `%s` shows `state.secretStacks`, so both
+  keep updating in combat. In that mode `%p` uses the client's seconds format instead of the text format options,
+  and `%s` is empty below 2 stacks. `.luacheckrc`: `C_DurationUtil`, `C_StringUtil`, and for the entries below `C_SwingTimer`, `C_CurveUtil`,
+  `NUM_BAG_SLOTS`.
+- `WeakAuras/GenericTrigger.lua`: when the restriction ends, unit health and power events are scanned again, so
+  health and power triggers do not keep their last readable values until the next change. `WeakAuras/Init.lua`:
+  `RestrictionChanged` also fires when only the unit stats restriction changes.
+- `WeakAuras/Compatibility.lua`: `Private.hasNativeSwingTimer`, true when `C_SwingTimer` exists.
+  `WeakAuras/GenericTrigger.lua`: the swing timer starts on `PLAYER_SWING` with the swing duration of the client,
+  for main hand, off hand and ranged (wand included), and a secret attack speed keeps the last readable one.
+  With `PLAYER_SWING`, only a swing paused by a cast restarts when the cast ends. `WeakAuras.IsTargetInSwingRange(hand)`.
+  `WeakAuras/Prototypes.lua`: the Swing Timer trigger has a Target In Range option, updated by
+  `PLAYER_SWING_RANGE_UPDATE`.
+- `WeakAuras/GenericTrigger.lua`: without the global `GetWeaponEnchantInfo`, the weapon enchant trigger reads
+  `C_Item.GetWeaponEnchantInfo` for main hand, off hand and ranged.
+- `WeakAuras/GenericTrigger.lua`: while cooldowns are secret, the global cooldown comes from the duration object of
+  `C_Spell.GetSpellCooldownDuration` (spell 61304, 29515 on Classic), returned by `WeakAuras.GetGCDInfo` as a sixth
+  value. `WeakAuras/Prototypes.lua`: the Global Cooldown trigger stores it as `durationObject`.
+- `WeakAuras/SubRegionTypes/Border.lua`: Color by Dispel Type option. The border takes the dispel type color of the
+  aura, from `C_UnitAuras.GetAuraDispelTypeColor` (secret colors included), else from the readable debuff class,
+  else the border color, also used for auras without dispel type. A border color set by a condition wins.
+  `WeakAurasOptions/SubRegionOptions/Border.lua`: its toggle.
+- `WeakAuras/Prototypes.lua`: the Ammo trigger filters by ammo item and gives the total of projectiles in the bags.
+- `WeakAuras/Prototypes.lua`: `Private.GetCooldownManagerSpells()` lists the spells of the Cooldown Manager catalog
+  (`C_CooldownViewer`). `WeakAurasOptions/LoadOptions.lua`: the Cooldown trigger has a From the Cooldown Manager
+  picker that sets the spell to an exact spell ID of that catalog.
+- `WeakAuras/ForeverAurasImport.lua` (new, listed in `WeakAuras/WeakAuras.toc`): auras exported by ForeverAuras
+  (internal version 91 and later, or older ones with ForeverAuras trigger or sub element types) are converted on
+  import, before the version check (`WeakAuras/Transmission.lua`). Their
+  Cooldown Manager triggers become Cooldown, Aura or Item Cooldown triggers, Blizzard Aura triggers become Aura
+  triggers, dispel type borders become borders colored by dispel type, the Swing Timer weapon and the Ammo
+  item list are mapped, media paths to ForeverAuras point to WeakAuras, and so do API references in custom code. What has no
+  equivalent is listed in the chat.
+- `WeakAuras/ForeverTutorial.lua`, `TUTORIAL.md`, `README.md`: what works in combat now, and a section on
+  importing ForeverAuras auras. `.pkgmeta`: `TUTORIAL.md` is not packaged. `.github/workflows/release.yml`:
+  CurseForge and Wago keys, used once the .toc files carry project IDs.
+- `WeakAuras/GenericTrigger.lua`: an attack speed change rescales the off hand swing by the off hand speed, instead of
+  the main hand one.
+- `WeakAuras/Prototypes.lua`, `WeakAuras/Types.lua`: the Swing Timer Target In Range option is a choice between In Range
+  and Out of Range (`Private.swing_range_types`), so an unknown range (no target) matches neither.
+- `WeakAuras/BuffTrigger2.lua`: a secret unit name or GUID is replaced by an empty name or the previous GUID instead
+  of being compared.
+- `WeakAuras/Libs/LibRangeCheck-3.0`, `WeakAuras/Libs/LibCustomGlow-1.0`, `WeakAuras/Libs/Chomp`: WoW Forever reports
+  the retail project ID with a Classic interface version. These libraries use their Classic Era spells, items,
+  textures and chat throttle there, and LibRangeCheck keeps its secret GUID handling.
+- `WeakAuras/SubRegionTypes/SubText.lua`: the client-drawn `%p` text follows the Old or Modern Blizzard time format
+  and the Increase Precision Below threshold (one decimal at most).
+- `WeakAuras/GenericTrigger.lua`: after an attack speed change, the off hand swing keeps an offset like the main hand,
+  so its shown end matches its timer, and both hands count the offset of an earlier change. `WeakAuras/Modernize.lua`: a Swing Timer Target In Range set with the former
+  yes/no option is converted to In Range or Out of Range.
+- `WeakAuras/Types.lua`: without the combat log, the Aura trigger no longer offers the Multi-target unit.
+  `WeakAuras/BuffTrigger2.lua`: its unit tracking skips secret GUIDs.
+- `WeakAuras/WeakAuras.lua`: `/wa cdm` shows or hides the Blizzard Cooldown Manager through the
+  `cooldownViewerEnabled` CVar, outside combat only. `.luacheckrc`: `C_CooldownViewer`.
+- `WeakAuras/Prototypes.lua`: new Bag Space (free and used slots of the carried bags, specialty bags on request),
+  Equipment Durability (lowest item, overall, broken items, all slots or one), Role (group role of the player) and
+  Tracking (active minimap tracking, by spell ID, or inverse) triggers. `WeakAuras/Types.lua`:
+  `Private.durability_progress_types`. `.luacheckrc`: `C_Minimap`, `GetInventoryItemDurability`,
+  `INVSLOT_FIRST_EQUIPPED`, `INVSLOT_LAST_EQUIPPED`.
+- `WeakAuras/Prototypes.lua`, `WeakAuras/Types.lua`, `WeakAuras/WeakAuras.lua`: the Instance Type load option (by
+  difficulty ID) is available. The difficulty names come from `GetDifficultyInfo`, without the outdated version
+  warning for unknown IDs.
+- `WeakAuras/Prototypes.lua`, `WeakAuras/GenericTrigger.lua`: the Conditions trigger has a Secret Restrictions Active
+  option, updated on the `RestrictionChanged` callback (`WA_RESTRICTION_CHANGED`).
+- `WeakAuras/Prototypes.lua`: the Cooldown trigger has an On Global Cooldown condition, with Show Global Cooldown
+  enabled, for example to hide the cooldown text during the global cooldown.
+- `WeakAuras/SubRegionTypes/DispelIcon.lua`, `WeakAurasOptions/SubRegionOptions/DispelIcon.lua` (new, listed in the
+  .toc files): Dispel Type Icon sub element. It shows the dispel type icon of the default UI when the dispel type is
+  readable, and a circle colored by the client (`C_UnitAuras.GetAuraDispelTypeColor`) when it is secret.
+  `WeakAuras/SubRegionTypes/Border.lua` shares its dispel colors and curve, and no longer reads a secret dispel type.
+- `WeakAuras/BuffTrigger2.lua`, `WeakAurasOptions/BuffTrigger2.lua`: the Aura trigger has an Elapsed Time filter, and
+  a From the Cooldown Manager picker that adds the aura spell IDs of a tracked buff (linked spells, tooltip spell and
+  spell, like the default UI). `WeakAuras/Prototypes.lua`: `Private.GetCooldownManagerAuras()`,
+  `Private.GetCooldownManagerAuraSpellIDs(cooldownID)`.
+- `WeakAuras/ForeverAurasImport.lua`: ForeverAuras Role, Tracking, Equipment Durability and Bag Space triggers,
+  dispel type icons, and the elapsed and total time filters of Cooldown Manager buffs are converted too.
+- `WeakAuras/BuffTrigger2.lua`, `WeakAurasOptions/BuffTrigger2.lua`, `WeakAuras/Types.lua`: the Aura trigger has a
+  Native Filter option, with the aura categories of the client (`Private.aura_native_filter_types`: cast by me,
+  crowd control, important, big and external defensive, dispellable...), each one required or excluded, tested with
+  `C_UnitAuras.IsAuraFilteredOutByInstanceID`. When it is the only filter, auras applied during the restriction also
+  match: their data stays secret, so the name is empty, and the game draws their icon (`state.secretIcon`,
+  `WeakAuras/RegionTypes/Icon.lua`, kept by `WeakAuras/WeakAuras.lua`), timer and stack text. They are read again
+  when the restriction ends. `WeakAuras/ForeverAurasImport.lua`: the native filters of Blizzard Aura triggers are
+  converted, and their own auras filter becomes the native one.
+  TimelineParser Stage triggers are listed as not converted, like TimelineParser Timer ones.
+
 ## 2026-09-28
 
 ### Added

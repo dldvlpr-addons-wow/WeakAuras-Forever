@@ -43,6 +43,7 @@ History.lua
 Transmission.lua
 ForeverTutorial.lua
 Modernize.lua
+ForeverAurasImport.lua
 Animations.lua
 Conditions.lua
 AnchorToWeakAuras.lua
@@ -82,6 +83,7 @@ RegionTypes\Model.lua
 SubRegionTypes\Background.lua
 SubRegionTypes\SubText.lua
 SubRegionTypes\Border.lua
+SubRegionTypes\DispelIcon.lua
 SubRegionTypes\Glow.lua
 SubRegionTypes\Tick.lua
 SubRegionTypes\Model.lua

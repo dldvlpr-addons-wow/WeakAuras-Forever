@@ -456,7 +456,12 @@ function ConstructFunction(prototype, trigger)
   end
 
   for _, v in ipairs(store) do
-    table.insert(ret, "    if (state." .. v .. " ~= " .. v .. ") then\n")
+    if Private.hasCombatLog then
+      table.insert(ret, "    if (state." .. v .. " ~= " .. v .. ") then\n")
+    else
+      -- Secret values cannot be compared, they are stored as they are
+      table.insert(ret, "    if (Private.ExecEnv.IsSecret(state." .. v .. ", " .. v .. ") or state." .. v .. " ~= " .. v .. ") then\n")
+    end
     table.insert(ret, "      state." .. v .. " = " .. v .. "\n")
     table.insert(ret, "      state.changed = true\n")
     table.insert(ret, "    end\n")
@@ -705,7 +710,8 @@ local function RunTriggerFunc(allStates, data, id, triggernum, event, arg1, arg2
           end
         end
       else
-        untriggerCheck = true;
+        -- Without combat log, an error comes from secret data: keep the last state until it is readable
+        untriggerCheck = ok or Private.hasCombatLog;
       end
     elseif (data.statesParameter == "unit") then
       if arg1 then
@@ -738,7 +744,7 @@ local function RunTriggerFunc(allStates, data, id, triggernum, event, arg1, arg2
             updateTriggerState = true
           end
         else
-          untriggerCheck = true;
+          untriggerCheck = ok or Private.hasCombatLog;
         end
       end
     elseif (data.statesParameter == "one") then
@@ -762,7 +768,8 @@ local function RunTriggerFunc(allStates, data, id, triggernum, event, arg1, arg2
           updateTriggerState = true;
         end
       else
-        untriggerCheck = true;
+        -- Without combat log, an error comes from secret data: keep the last state until it is readable
+        untriggerCheck = ok or Private.hasCombatLog;
       end
     else
       local ok, returnValue
@@ -785,7 +792,8 @@ local function RunTriggerFunc(allStates, data, id, triggernum, event, arg1, arg2
           updateTriggerState = true;
         end
       else
-        untriggerCheck = true;
+        -- Without combat log, an error comes from secret data: keep the last state until it is readable
+        untriggerCheck = ok or Private.hasCombatLog;
       end
     end
     if (untriggerCheck and not optionsEvent) then
@@ -973,6 +981,30 @@ end
 function WeakAuras.ScanUnitEvents(event, unit, ...)
   scannerFrame:Queue(Private.ScanUnitEvents, event, unit, ...)
 end
+
+-- Conditions trigger, Secret Restrictions Active
+Private.callbacks:RegisterCallback("RestrictionChanged", function()
+  Private.ScanEvents("WA_RESTRICTION_CHANGED")
+end)
+
+-- Health and power triggers kept their last readable values during the restriction: read them again when it ends,
+-- instead of waiting for the next change
+local unitStatEvents = {
+  UNIT_HEALTH = true, UNIT_HEALTH_FREQUENT = true, UNIT_MAXHEALTH = true,
+  UNIT_POWER_FREQUENT = true, UNIT_POWER_UPDATE = true, UNIT_MAXPOWER = true,
+}
+Private.callbacks:RegisterCallback("RestrictionChanged", function(_, isRestricted)
+  if isRestricted or Private.IsRestricted("unitStats") then
+    return
+  end
+  for unit, unit_list in pairs(loaded_unit_events) do
+    for event in pairs(unit_list) do
+      if unitStatEvents[event] then
+        WeakAuras.ScanUnitEvents(event, unit)
+      end
+    end
+  end
+end)
 
 local function checkOnUpdateThrottle(data)
   if data.onUpdateThrottle then
@@ -1663,6 +1695,8 @@ function GenericTrigger.Add(data, region)
   watched_trigger_events[id] = nil
 
   local warnAboutCLEUEvents = false
+  -- WoW Forever limits, shown in the options
+  local warnAboutCombatLog, warnAboutSecretThreshold = false, false
 
   for triggernum, triggerData in ipairs(data.triggers) do
     local trigger, untrigger = triggerData.trigger, triggerData.untrigger
@@ -1710,6 +1744,21 @@ function GenericTrigger.Add(data, region)
 
             prototype = event_prototypes[trigger.event]
             triggerFuncStr = ConstructFunction(prototype, trigger);
+
+            if not Private.hasCombatLog then
+              if trigger.event == "Combat Log" then
+                warnAboutCombatLog = true
+              elseif trigger.event == "Health" or trigger.event == "Power" then
+                for _, arg in ipairs(prototype.args) do
+                  local enabled = arg.enable == nil or arg.enable == true
+                                  or type(arg.enable) == "function" and arg.enable(trigger)
+                  if arg.type == "number" and arg.name and arg.name ~= "countCharged" and enabled
+                     and trigger["use_" .. arg.name] and trigger[arg.name] then
+                    warnAboutSecretThreshold = true
+                  end
+                end
+              end
+            end
 
             statesParameter = prototype.statesParameter;
             triggerFunc = Private.LoadFunction(triggerFuncStr, id);
@@ -1844,6 +1893,10 @@ function GenericTrigger.Add(data, region)
               if event == "CLEU" or event == "COMBAT_LOG_EVENT_UNFILTERED" then
                 warnAboutCLEUEvents = true
               end
+              local upperEvent = event:upper()
+              if not Private.hasCombatLog and (upperEvent:find("^CLEU") or upperEvent:find("^COMBAT_LOG_EVENT")) then
+                warnAboutCombatLog = true
+              end
               for i in event:gmatch("[^:]+") do
                 if not trueEvent then
                   trueEvent = string.upper(i)
@@ -1957,6 +2010,20 @@ function GenericTrigger.Add(data, region)
   else
     Private.AuraWarnings.UpdateWarning(data.uid, "spammy_event_warning")
   end
+
+  if warnAboutCombatLog then
+    Private.AuraWarnings.UpdateWarning(data.uid, "forever_combat_log", "warning",
+      "WoW Forever does not give the combat log to addons: combat log triggers and CLEU events never fire.")
+  else
+    Private.AuraWarnings.UpdateWarning(data.uid, "forever_combat_log")
+  end
+  if warnAboutSecretThreshold then
+    Private.AuraWarnings.UpdateWarning(data.uid, "forever_secret_threshold", "warning",
+      "In combat, WoW Forever can hide health and power values from addons. A threshold on them cannot be checked "
+      .. "then: the aura keeps its last state, or hides for a percent or deficit threshold.")
+  else
+    Private.AuraWarnings.UpdateWarning(data.uid, "forever_secret_threshold")
+  end
 end
 
 do
@@ -2028,13 +2095,47 @@ do
 
   local swingTimerFrame;
   local lastSwingMain, lastSwingOff, lastSwingRange;
-  local swingDurationMain, swingDurationOff, swingDurationRange, mainSwingOffset;
+  local swingDurationMain, swingDurationOff, swingDurationRange, mainSwingOffset, offSwingOffset;
   local mainTimer, offTimer, rangeTimer;
   local selfGUID;
   local mainSpeed, offSpeed = UnitAttackSpeed("player")
   local casting = false
   local skipNextAttack, skipNextAttackCount
   local isAttacking
+  -- Weapon speeds are secret while unit stats are restricted: the last readable ones are used instead
+  local readableSpeed = {}
+  local function ReadableSpeed(hand, speed)
+    if Private.IsSecret(speed) then
+      return readableSpeed[hand]
+    end
+    readableSpeed[hand] = speed
+    return speed
+  end
+
+  local handBySwingType, swingTypeByHand = {}, {}
+  if Private.hasNativeSwingTimer then
+    handBySwingType[Enum.PlayerSwingType.MainHand] = "main"
+    handBySwingType[Enum.PlayerSwingType.OffHand] = "off"
+    handBySwingType[Enum.PlayerSwingType.Ranged] = "ranged"
+    for swingType, hand in pairs(handBySwingType) do
+      swingTypeByHand[hand] = swingType
+    end
+  end
+
+  --- WoW Forever: whether the target is within reach of that weapon, nil when the client does not tell
+  ---@param hand string
+  ---@return boolean?
+  function WeakAuras.IsTargetInSwingRange(hand)
+    local swingType = swingTypeByHand[hand]
+    if not swingType then
+      return nil
+    end
+    local ok, inRange = pcall(C_SwingTimer.IsTargetWithinSwingRange, swingType)
+    if ok and type(inRange) == "boolean" and not Private.IsSecret(inRange) then
+      return inRange
+    end
+    return nil
+  end
 
   ---@param hand string
   ---@return number duration
@@ -2056,7 +2157,7 @@ do
       local itemId = GetInventoryItemID("player", oh);
       local name, _, _, _, _, _, _, _, _, icon = C_Item.GetItemInfo(itemId or 0);
       if(lastSwingOff) then
-        return swingDurationOff, lastSwingOff + swingDurationOff, name, icon;
+        return swingDurationOff, lastSwingOff + swingDurationOff - (offSwingOffset or 0), name, icon;
       else
         return 0, math.huge, name, icon;
       end
@@ -2081,16 +2182,25 @@ do
     if(hand == "main") then
       lastSwingMain, swingDurationMain, mainSwingOffset = nil, nil, nil;
     elseif(hand == "off") then
-      lastSwingOff, swingDurationOff = nil, nil;
+      lastSwingOff, swingDurationOff, offSwingOffset = nil, nil, nil;
     elseif(hand == "ranged") then
       lastSwingRange, swingDurationRange = nil, nil;
     end
     swingTriggerUpdate()
   end
 
-  local function swingStart(hand)
-    mainSpeed, offSpeed = UnitAttackSpeed("player")
+  --- @param duration number? The duration given by PLAYER_SWING, read from the weapon speed otherwise
+  local function swingStart(hand, duration)
+    local mainSpeedNew, offSpeedNew = UnitAttackSpeed("player")
+    mainSpeed, offSpeed = ReadableSpeed("main", mainSpeedNew), ReadableSpeed("off", offSpeedNew)
     offSpeed = offSpeed or 0
+    if duration then
+      if hand == "main" then
+        mainSpeed = duration
+      elseif hand == "off" then
+        offSpeed = duration
+      end
+    end
     local currentTime = GetTime()
     if hand == "main" then
       lastSwingMain = currentTime
@@ -2107,6 +2217,7 @@ do
     elseif hand == "off" then
       lastSwingOff = currentTime
       swingDurationOff = offSpeed
+      offSwingOffset = 0
       if offTimer then
         timer:CancelTimer(offTimer)
       end
@@ -2116,7 +2227,7 @@ do
         swingEnd(hand)
       end
     elseif hand == "ranged" then
-      local rangeSpeed = UnitRangedDamage("player")
+      local rangeSpeed = duration or ReadableSpeed("ranged", (UnitRangedDamage("player")))
       lastSwingRange = currentTime
       swingDurationRange = rangeSpeed
       if rangeTimer then
@@ -2175,23 +2286,31 @@ do
     local now = GetTime()
     if event == "UNIT_ATTACK_SPEED" then
       local mainSpeedNew, offSpeedNew = UnitAttackSpeed("player")
+      if Private.IsSecret(mainSpeedNew, offSpeedNew) then
+        -- Secret speeds cannot rescale the running swing. With PLAYER_SWING, the next swing has the new duration.
+        Private.StopProfileSystem("generictrigger swing");
+        return
+      end
       offSpeedNew = offSpeedNew or 0
-      if lastSwingMain then
+      -- mainSpeed is nil when every speed seen under restriction was secret
+      if lastSwingMain and mainSpeed then
         if mainSpeedNew ~= mainSpeed then
           timer:CancelTimer(mainTimer)
           local multiplier = mainSpeedNew / mainSpeed
-          local timeLeft = (lastSwingMain + swingDurationMain - now) * multiplier
+          local timeLeft = (lastSwingMain + swingDurationMain - (mainSwingOffset or 0) - now) * multiplier
           swingDurationMain = mainSpeedNew
           mainSwingOffset = (lastSwingMain + swingDurationMain) - (now + timeLeft)
           mainTimer = timer:ScheduleTimerFixed(swingEnd, timeLeft, "main")
         end
       end
-      if lastSwingOff then
+      if lastSwingOff and offSpeed and offSpeed > 0 then
         if offSpeedNew ~= offSpeed then
           timer:CancelTimer(offTimer)
-          local multiplier = offSpeedNew / mainSpeed
-          local timeLeft = (lastSwingOff + swingDurationOff - now) * multiplier
+          local multiplier = offSpeedNew / offSpeed
+          local timeLeft = (lastSwingOff + swingDurationOff - (offSwingOffset or 0) - now) * multiplier
           swingDurationOff = offSpeedNew
+          -- Like the main hand, the offset keeps the shown end on the rescaled timer
+          offSwingOffset = (lastSwingOff + swingDurationOff) - (now + timeLeft)
           offTimer = timer:ScheduleTimerFixed(swingEnd, timeLeft, "off")
         end
       end
@@ -2204,6 +2323,18 @@ do
       swingStart("off")
       swingStart("ranged")
       swingTriggerUpdate()
+    elseif event == "UNIT_SPELLCAST_SUCCEEDED" and Private.hasNativeSwingTimer then
+      -- PLAYER_SWING restarts the swing with the client's duration, so only the swing paused by a cast restarts here
+      if casting then
+        casting = false
+        swingTimerFrame:SetScript("OnUpdate", function(self)
+          if isAttacking then
+            swingStart("main")
+            swingTriggerUpdate()
+          end
+          self:SetScript("OnUpdate", nil)
+        end)
+      end
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
       if Private.reset_swing_spells[spell] or casting then
         if casting then
@@ -2231,7 +2362,7 @@ do
         -- pause swing timer
         casting = true
         lastSwingMain, swingDurationMain, mainSwingOffset = nil, nil, nil
-        lastSwingOff, swingDurationOff = nil, nil
+        lastSwingOff, swingDurationOff, offSwingOffset = nil, nil, nil
         swingTriggerUpdate()
       end
     elseif event == "PLAYER_ENTER_COMBAT" then
@@ -2259,10 +2390,28 @@ do
         swingTimerFrame:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTED", "player")
         swingTimerFrame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", "player")
       end
+      if Private.hasNativeSwingTimer then
+        pcall(swingTimerFrame.RegisterEvent, swingTimerFrame, "PLAYER_SWING")
+        pcall(swingTimerFrame.RegisterEvent, swingTimerFrame, "PLAYER_SWING_RANGE_UPDATE")
+        for swingType in pairs(handBySwingType) do
+          pcall(C_SwingTimer.EnableRangeCheck, swingType, true)
+        end
+      end
       swingTimerFrame:SetScript("OnEvent",
         function(_, event, ...)
           if event == "COMBAT_LOG_EVENT_UNFILTERED" then
             swingTimerCLEUCheck(CombatLogGetCurrentEventInfo())
+          elseif event == "PLAYER_SWING" then
+            local swingDuration, swingType = ...
+            local hand = not Private.IsSecret(swingType) and handBySwingType[swingType]
+            if hand and type(swingDuration) == "number" and not Private.IsSecret(swingDuration) then
+              Private.StartProfileSystem("generictrigger swing");
+              swingStart(hand, swingDuration)
+              swingTriggerUpdate()
+              Private.StopProfileSystem("generictrigger swing");
+            end
+          elseif event == "PLAYER_SWING_RANGE_UPDATE" then
+            swingTriggerUpdate()
           else
             swingTimerCheck(event, ...)
           end
@@ -2298,6 +2447,8 @@ do
   local gcdSpellName;
   local gcdSpellIcon;
   local gcdEndCheck;
+  -- While cooldowns are secret, the GCD is only known as a duration object
+  local gcdDurationObject, gcdSecretCheck
   local gcdModrate
 
   local shootStart
@@ -2313,9 +2464,21 @@ do
     return runeDuration
   end
 
+  --- True while a secret GCD duration object runs, nil when the client cannot tell
+  local function IsDurationObjectRunning(durationObject)
+    local okZero, isZero = pcall(durationObject.IsZero, durationObject)
+    local okExpired, hasExpired = pcall(durationObject.HasExpired, durationObject)
+    if okZero and okExpired and type(isZero) == "boolean" and type(hasExpired) == "boolean"
+       and not Private.IsSecret(isZero, hasExpired)
+    then
+      return not isZero and not hasExpired
+    end
+  end
+
   local function CheckGCD()
     local event;
     local startTime, duration, modRate
+    local gcdSpellId = WeakAuras.IsClassicOrTBCOrWrath() and 29515 or 61304
     if WeakAuras.IsClassicOrTBCOrWrath() then
       local spellCooldownInfo = C_Spell.GetSpellCooldown(29515)
       if spellCooldownInfo then
@@ -2341,6 +2504,29 @@ do
         return
       end
       startTime, duration, modRate = 0, 0, nil
+      -- The duration object stays drawable, and tells whether the GCD runs
+      local ok, durationObject = pcall(C_Spell.GetSpellCooldownDuration, gcdSpellId)
+      if ok and Private.IsDurationObject(durationObject) and IsDurationObjectRunning(durationObject) then
+        if gcdDurationObject ~= durationObject then
+          event = gcdDurationObject and "GCD_CHANGE" or "GCD_START"
+          gcdDurationObject = durationObject
+        end
+        -- The end time is secret: check again shortly, one timer at a time
+        if not gcdSecretCheck then
+          gcdSecretCheck = timer:ScheduleTimerFixed(function()
+            gcdSecretCheck = nil
+            CheckGCD()
+          end, 0.1)
+        end
+        if event and not WeakAuras.IsPaused() then
+          Private.ScanEvents(event)
+        end
+        return
+      end
+    end
+    if gcdDurationObject then
+      gcdDurationObject = nil
+      event = "GCD_END"
     end
     if(duration and duration > 0) then
       if not(gcdStart) then
@@ -2603,6 +2789,7 @@ do
             spellCount, unifiedModRate, modRate, modRateCharges, paused
             = WeakAuras.GetSpellCooldownUnified(effectiveSpellId, GetRuneDuration());
       if charges == false then
+        spellDetail.secret = true
         return
       end
 
@@ -2720,12 +2907,19 @@ do
 
       local spellDetail = self.data[effectiveSpellId]
 
+      -- While the cooldown is secret, triggers are updated on every check, so they fetch a new duration object
+      local secretChanged = false
       if charges == false then
         charges, maxCharges, spellCount = spellDetail.charges, spellDetail.chargesMax, spellDetail.count
         startTime, duration, unifiedModRate = KnownCooldown(self.spellCds, effectiveSpellId)
         startTimeCooldown, durationCooldown, modRate = KnownCooldown(self.spellCdsOnlyCooldown, effectiveSpellId)
         startTimeCharges, durationCharges, modRateCharges = KnownCooldown(self.spellCdsCharges, effectiveSpellId)
         unifiedCooldownBecauseRune, cooldownBecauseRune, paused = true, true, false
+        spellDetail.secret = true
+        secretChanged = true
+      elseif spellDetail.secret then
+        spellDetail.secret = nil
+        secretChanged = true
       end
 
       local chargesChanged = spellDetail.charges ~= charges or spellDetail.count ~= spellCount
@@ -2762,7 +2956,7 @@ do
           self:SendEventsForSpell(effectiveSpellId, "SPELL_COOLDOWN_READY", effectiveSpellId)
         end
 
-        if changed or chargesChanged then
+        if changed or chargesChanged or secretChanged then
           self:SendEventsForSpell(effectiveSpellId, "SPELL_COOLDOWN_CHANGED", effectiveSpellId)
         end
 
@@ -2827,6 +3021,25 @@ do
         return
       end
       return spellDetail.charges, spellDetail.chargesMax, spellDetail.count, spellDetail.chargeGainTime, spellDetail.chargeLostTime
+    end,
+
+    -- Duration object of the 12.x engine for a spell whose cooldown is secret, nil otherwise
+    GetSpellCooldownDurationObject = function(self, effectiveSpellId, showgcd, ignoreSpellKnown, track)
+      local spellDetail = self.data[effectiveSpellId]
+      if not (spellDetail and spellDetail.secret) or (not spellDetail.known and not ignoreSpellKnown) then
+        return
+      end
+      -- The charges are secret too, so "auto" relies on the last readable maximum
+      local useCharges = track == "charges" or (track ~= "cooldown" and (spellDetail.chargesMax or 0) > 1)
+      local durationObject
+      if useCharges then
+        durationObject = C_Spell.GetSpellChargeDuration and C_Spell.GetSpellChargeDuration(effectiveSpellId)
+      else
+        durationObject = C_Spell.GetSpellCooldownDuration and C_Spell.GetSpellCooldownDuration(effectiveSpellId, not showgcd)
+      end
+      if Private.IsDurationObject(durationObject) then
+        return durationObject
+      end
     end,
 
     GetSpellCooldown = function(self, effectiveSpellId, ignoreRuneCD, showgcd, ignoreSpellKnown, track)
@@ -2915,7 +3128,7 @@ do
         return
       end
       if (event == "ACTIONBAR_UPDATE_COOLDOWN" or event == "PLAYER_REGEN_ENABLED") then
-        mark_ACTIONBAR_UPDATE_COOLDOWN = true
+        mark_ACTIONBAR_UPDATE_COOLDOWN = mark_ACTIONBAR_UPDATE_COOLDOWN or true
         cdReadyFrame:Show()
         return
       end
@@ -2938,6 +3151,9 @@ do
       elseif event == "SPELL_UPDATE_USABLE" then
         Private.CheckItemCooldowns()
         Private.CheckItemSlotCooldowns()
+      elseif event == "SPELL_UPDATE_COOLDOWN" and Private.IsSecret((...), (select(3, ...))) then
+        -- A secret payload does not say which spell changed: check every spell once, on the next frame
+        mark_ACTIONBAR_UPDATE_COOLDOWN = "secret"
       elseif event == "SPELL_UPDATE_COOLDOWN" or event == "RUNE_POWER_UPDATE"
         or event == "PLAYER_TALENT_UPDATE" or event == "PLAYER_PVP_TALENT_UPDATE"
         or event == "CHARACTER_POINTS_CHANGED" or event == "RUNE_TYPE_UPDATE"
@@ -2946,14 +3162,14 @@ do
         local spellId = nil
         if event == "SPELL_UPDATE_COOLDOWN" then
           local arg1, baseSpellID, category = ...
-          if Private.IsSecret(arg1, category) then
-            arg1, category = nil, nil
-          end
           if arg1 and type(arg1) == "number" then
             spellId = arg1
           end
 
-          mark_ACTIONBAR_UPDATE_COOLDOWN = nil
+          -- This event replaces a pending ACTIONBAR_UPDATE_COOLDOWN check, but not the full check of a secret payload
+          if mark_ACTIONBAR_UPDATE_COOLDOWN ~= "secret" then
+            mark_ACTIONBAR_UPDATE_COOLDOWN = nil
+          end
 
           Private.CheckItemCooldowns()
           Private.CheckItemSlotCooldowns()
@@ -3008,6 +3224,12 @@ do
     cdReadyFrame:Hide()
     cdReadyFrame:SetScript("OnEvent", cdReadyFrame.HandleEvent)
     cdReadyFrame:SetScript("OnUpdate", cdReadyFrame.HandleEvent)
+    -- Cooldowns can stay secret after the end of combat inside instances, check them again once readable
+    Private.callbacks:RegisterCallback("RestrictionChanged", function(_, isRestricted)
+      if not isRestricted then
+        cdReadyFrame:HandleEvent("ACTIONBAR_UPDATE_COOLDOWN")
+      end
+    end)
   end
 
   ---@param id number
@@ -3157,6 +3379,16 @@ do
     return SpellDetails:GetSpellCooldown(id, ignoreRuneCD, showgcd, ignoreSpellKnown, track)
   end
 
+  --- Duration object of the 12.x engine while the spell cooldown is secret, nil otherwise.
+  --- Regions draw it natively, see state.durationObject.
+  ---@param id number
+  ---@param showgcd boolean?
+  ---@param ignoreSpellKnown boolean?
+  ---@param track string? "auto", "charges" or "cooldown"
+  function WeakAuras.GetSpellCooldownDurationObject(id, showgcd, ignoreSpellKnown, track)
+    return SpellDetails:GetSpellCooldownDurationObject(id, showgcd, ignoreSpellKnown, track)
+  end
+
   ---@param id string
   ---@param ignoreSpellKnown? boolean
   ---@return integer? charges
@@ -3199,7 +3431,10 @@ do
   ---@return number|string icon
   ---@return number modrate
   function WeakAuras.GetGCDInfo()
-    if(gcdStart) then
+    if gcdDurationObject then
+      return 0, math.huge, gcdSpellName or "Invalid", gcdSpellIcon or "Interface\\Icons\\INV_Misc_QuestionMark", 1.0,
+             gcdDurationObject
+    elseif(gcdStart) then
       return gcdDuration, gcdStart + gcdDuration, gcdSpellName or "Invalid", gcdSpellIcon or "Interface\\Icons\\INV_Misc_QuestionMark", gcdModrate;
     else
       return 0, math.huge, gcdSpellName or "Invalid", gcdSpellIcon or "Interface\\Icons\\INV_Misc_QuestionMark", 1.0;
@@ -4318,6 +4553,31 @@ do
           end
 
           return "Unknown", "Unknown";
+        end
+      end
+
+      -- WoW Forever: the global GetWeaponEnchantInfo only exists with the deprecation fallbacks,
+      -- C_Item.GetWeaponEnchantInfo(Enum.WeaponSlot) lists the enchants of one weapon
+      local GetWeaponEnchantInfo = GetWeaponEnchantInfo
+      if C_Item.GetWeaponEnchantInfo and Enum.WeaponSlot then
+        local function SlotEnchant(weaponSlot)
+          local ok, enchants = pcall(C_Item.GetWeaponEnchantInfo, weaponSlot)
+          if ok and type(enchants) == "table" then
+            for _, enchant in ipairs(enchants) do
+              if enchant.hasEnchant then
+                return true, enchant.timeLeft, enchant.charges, enchant.enchantID
+              end
+            end
+          end
+          return false
+        end
+        GetWeaponEnchantInfo = function()
+          local hasMainHand, mainHandTime, mainHandCharges, mainHandID = SlotEnchant(Enum.WeaponSlot.MainHand)
+          local hasOffHand, offHandTime, offHandCharges, offHandID = SlotEnchant(Enum.WeaponSlot.OffHand)
+          local hasRanged, rangedTime, rangedCharges, rangedID = SlotEnchant(Enum.WeaponSlot.Ranged)
+          return hasMainHand, mainHandTime, mainHandCharges, mainHandID,
+                 hasOffHand, offHandTime, offHandCharges, offHandID,
+                 hasRanged, rangedTime, rangedCharges, rangedID
         end
       end
 

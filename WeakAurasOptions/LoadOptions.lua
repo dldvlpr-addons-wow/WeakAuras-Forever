@@ -784,6 +784,31 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
             control = "WeakAurasInputFocus",
           };
           order = order + 1;
+          if arg.cooldownManagerPicker and C_CooldownViewer and C_CooldownViewer.GetCooldownViewerCategorySet then
+            -- Fills the spell with an exact spell ID taken from the Cooldown Manager catalog
+            options["cooldownManager"..name..suffix] = {
+              type = "select",
+              width = WeakAuras.doubleWidth,
+              name = L["From the Cooldown Manager"],
+              order = order,
+              hidden = disabled or hidden,
+              values = OptionsPrivate.Private.GetCooldownManagerSpells,
+              get = function()
+                local value = WeakAuras.SafeToNumber(getValue(trigger, nil, realname, multiEntry, entryNumber))
+                return value and OptionsPrivate.Private.GetCooldownManagerSpells()[value] and value or nil
+              end,
+              set = function(info, v)
+                setValue(trigger, realname, v, multiEntry, entryNumber)
+                setValue(trigger, "use_exact_"..realname, true, multiEntry, entryNumber)
+                WeakAuras.Add(data);
+                WeakAuras.ClearAndUpdateOptions(data.id)
+                OptionsPrivate.Private.ScanForLoads({[data.id] = true});
+                WeakAuras.UpdateThumbnail(data);
+                OptionsPrivate.SortDisplayButtons(nil, true);
+              end,
+            };
+            order = order + 1;
+          end
         elseif(arg.type == "select" or arg.type == "unit" or arg.type == "currency") then
           if entryNumber > 1 then
             options["spacer_"..name..suffix].width = WeakAuras.normalWidth
