@@ -260,34 +260,58 @@ local function UnbindDurationText(subRegion)
   end
 end
 
--- Returns true when the client draws the text
-local function UpdateNativeText(subRegion, parent)
-  local textStr = subRegion.text_text
-  if textStr == "%p" and canBindDurationText and subRegion.durationTextBinding ~= false and parent.durationObject
-     and pcall(BindDurationText, subRegion, parent.durationObject)
+-- Placeholders that a secret progress can fill: the value ones and the total ones
+local secretValuePlaceholders = {
+  p = "value", value = "value", health = "value", power = "value",
+  t = "total", total = "total", maxhealth = "total", maxpower = "total",
+  percenthealth = "percent", percentpower = "percent",
+}
+
+-- Returns true when the client draws the text. holder has the FontString (text) and the binding fields,
+-- parent the progress (durationObject, secretValue, secretTotal, state)
+local function UpdateNativeText(holder, parent, textStr)
+  if textStr == "%p" and canBindDurationText and holder.durationTextBinding ~= false and parent.durationObject
+     and pcall(BindDurationText, holder, parent.durationObject)
   then
     return true
   end
-  UnbindDurationText(subRegion)
+  UnbindDurationText(holder)
   local secretStacks = textStr == "%s" and parent.state and parent.state.secretStacks
   -- Only set during the restriction, secret or not. type() is the only test allowed on a secret
   if type(secretStacks) == "string" then
-    subRegion.text:SetText(secretStacks)
+    holder.text:SetText(secretStacks)
     return true
   end
-  if type(parent.secretValue) == "number" and textStr:find("%%[pt]")
-     and not textStr:find("%%[pt][%w%.]") and not textStr:gsub("%%[pt]", ""):find("%%")
-  then
-    local values = {}
-    local formatString = textStr:gsub("%%([pt])", function(placeholder)
-      values[#values + 1] = placeholder == "p" and parent.secretValue or parent.secretTotal
-      return "%s"
+  if type(parent.secretValue) == "number" and textStr:find("%%[%w%.]") and not textStr:find("{", 1, true) then
+    local values, unknown = {}, false
+    local formatString = textStr:gsub("%%%%", ""):gsub("%%([%w%.]+)", function(placeholder)
+      local kind = secretValuePlaceholders[placeholder]
+      if not kind then
+        unknown = true
+        return ""
+      end
+      if kind == "percent" then
+        local percent = parent.state and parent.state.secretPercentText
+        if type(percent) ~= "number" then
+          unknown = true
+          return ""
+        end
+        values[#values + 1] = percent
+        return ""
+      end
+      values[#values + 1] = kind == "value" and parent.secretValue or parent.secretTotal
+      return ""
     end)
-    subRegion.text:SetText(string.format(formatString, unpack(values)))
-    return true
+    if not unknown then
+      formatString = formatString:gsub("%%", "%%%%"):gsub("", "%%%%"):gsub("", "%%s"):gsub("", "%%.0f")
+      holder.text:SetText(string.format(formatString, unpack(values)))
+      return true
+    end
   end
   return false
 end
+Private.UpdateNativeText = UpdateNativeText
+Private.UnbindDurationText = UnbindDurationText
 
 local function onAcquire(subRegion)
   subRegion:Show()
@@ -433,7 +457,7 @@ local function modify(parent, region, parentData, data, first)
     local UpdateText
     if region.text_text and Private.ContainsAnyPlaceHolders(region.text_text) then
       UpdateText = function()
-        if UpdateNativeText(region, parent) then
+        if UpdateNativeText(region, parent, region.text_text or "") then
           return
         end
         local textStr = region.text_text or ""

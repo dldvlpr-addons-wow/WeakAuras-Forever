@@ -444,6 +444,163 @@ local function FrameTick(self)
   end
 end
 
+local nativeOrientation = {
+  ["HORIZONTAL_INVERSE"] = { "HORIZONTAL", false },
+  ["HORIZONTAL"] = { "HORIZONTAL", true },
+  ["VERTICAL"] = { "VERTICAL", false },
+  ["VERTICAL_INVERSE"] = { "VERTICAL", true },
+}
+local canDrawDurationObject = Enum.StatusBarTimerDirection ~= nil
+                              and CreateFrame("StatusBar").SetTimerDuration ~= nil
+local canDrawRadialPercent = CreateFrame("Frame"):CreateTexture().SetRadialProgressBarPercent ~= nil
+                             and CurveConstants ~= nil and CurveConstants.ZeroToOne ~= nil
+                             and CurveConstants.Reverse ~= nil
+
+local function GetNativeBar(self)
+  if not self.nativeBar then
+    local nativeBar = CreateFrame("StatusBar", nil, self)
+    nativeBar:SetAllPoints(self)
+    nativeBar:SetStatusBarTexture("Interface\\AddOns\\WeakAuras\\Media\\Textures\\Square_FullWhite")
+    nativeBar:GetStatusBarTexture():SetAlpha(0)
+    nativeBar:Hide()
+    local mask = self:CreateMaskTexture()
+    mask:SetTexture("Interface\\AddOns\\WeakAuras\\Media\\Textures\\Square_FullWhite",
+                    "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE", "NEAREST")
+    mask:SetTexelSnappingBias(0)
+    mask:SetSnapToPixelGrid(false)
+    local fill = nativeBar:GetStatusBarTexture()
+    mask:SetPoint("TOPLEFT", fill, "TOPLEFT", -0.05, 0.05)
+    mask:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT", 0.05, -0.05)
+    self.nativeBar = nativeBar
+    self.nativeMask = mask
+  end
+  return self.nativeBar
+end
+
+local NativeRadialTick
+
+local function HideNative(self)
+  if self.FrameTick == NativeRadialTick then
+    self.FrameTick = nil
+    self.subRegionEvents:RemoveSubscriber("FrameTick", self)
+  end
+  if self.nativeLinearShown then
+    self.nativeLinearShown = false
+    self.foreground.texture:RemoveMaskTexture(self.nativeMask)
+    self.nativeBar:Hide()
+  end
+  if self.nativeRadialShown then
+    self.nativeRadialShown = false
+    self.nativeRadial:Hide()
+    self.foregroundSpinner:Show()
+  end
+end
+
+local function ShowNativeLinear(self)
+  local nativeBar = GetNativeBar(self)
+  local orientation = nativeOrientation[self.orientation] or nativeOrientation.HORIZONTAL_INVERSE
+  nativeBar:SetOrientation(orientation[1])
+  nativeBar:SetReverseFill(orientation[2])
+  if not self.nativeLinearShown then
+    self.nativeLinearShown = true
+    self.foreground.texture:AddMaskTexture(self.nativeMask)
+    nativeBar:Show()
+  end
+  self.progress = 1
+  if self.useSmoothProgress then
+    self.smoothProgress:ResetSmoothedValue(1)
+  end
+  self.foreground:SetValue(0, 1)
+  return nativeBar
+end
+
+local function ShowNativeRadial(self, percent)
+  if not self.nativeRadial then
+    self.nativeRadial = self:CreateTexture(nil, "ARTWORK", nil, 1)
+    self.nativeRadial:SetAllPoints(self)
+  end
+  local radial = self.nativeRadial
+  Private.SetTextureOrAtlas(radial, self.currentTexture, self.textureWrapMode, self.textureWrapMode)
+  radial:SetVertexColor(self.color_anim_r or self.color_r or 1, self.color_anim_g or self.color_g or 1,
+                        self.color_anim_b or self.color_b or 1, self.color_anim_a or self.color_a or 1)
+  radial:SetBlendMode(self.foreground:GetBlendMode())
+  if radial.SetRadialProgressBarReverse then
+    radial:SetRadialProgressBarReverse(self.orientation == "ANTICLOCKWISE")
+  end
+  radial:SetRadialProgressBarPercent(percent)
+  if not self.nativeRadialShown then
+    self.nativeRadialShown = true
+    self.foregroundSpinner:Hide()
+    radial:Show()
+  end
+end
+
+local function EvaluateDurationPercent(self)
+  local fillElapsed = not self.inverse ~= not self.inverseDirection
+  local ok, percent = pcall(self.durationObject.EvaluateRemainingPercent, self.durationObject,
+                            fillElapsed and CurveConstants.Reverse or CurveConstants.ZeroToOne)
+  if ok and type(percent) == "number" then
+    return percent
+  end
+end
+
+NativeRadialTick = function(self)
+  local percent = EvaluateDurationPercent(self)
+  if percent then
+    ShowNativeRadial(self, percent)
+  end
+end
+
+local function UpdateNativeValue(self)
+  if self.inverseDirection then
+    return false
+  end
+  if self.circular then
+    if canDrawRadialPercent and type(self.secretPercent) == "number" then
+      ShowNativeRadial(self, self.secretPercent)
+      return true
+    end
+  elseif canDrawDurationObject and type(self.secretValue) == "number" and type(self.secretTotal) == "number" then
+    local nativeBar = ShowNativeLinear(self)
+    nativeBar:SetMinMaxValues(0, self.secretTotal)
+    nativeBar:SetValue(self.secretValue)
+    return true
+  end
+  return false
+end
+
+local function UpdateNativeTime(self)
+  if not self.durationObject then
+    return false
+  end
+  if self.circular then
+    if not canDrawRadialPercent then
+      return false
+    end
+    local percent = EvaluateDurationPercent(self)
+    if not percent then
+      return false
+    end
+    ShowNativeRadial(self, percent)
+    if not self.paused and self.FrameTick ~= NativeRadialTick then
+      if self.FrameTick then
+        self.subRegionEvents:RemoveSubscriber("FrameTick", self)
+      end
+      self.FrameTick = NativeRadialTick
+      self.subRegionEvents:AddSubscriber("FrameTick", self)
+    end
+    return true
+  end
+  if not canDrawDurationObject then
+    return false
+  end
+  local nativeBar = ShowNativeLinear(self)
+  local fillElapsed = not self.inverse ~= not self.inverseDirection
+  nativeBar:SetTimerDuration(self.durationObject, Enum.StatusBarInterpolation.Immediate,
+    fillElapsed and Enum.StatusBarTimerDirection.ElapsedTime or Enum.StatusBarTimerDirection.RemainingTime)
+  return true
+end
+
 local funcs = {
   ForAllSpinners = function(self, f, ...)
     f(self.foregroundSpinner, ...)
@@ -460,6 +617,8 @@ local funcs = {
     end
   end,
   SetOrientation = function (self, orientation)
+    local wasNative = self.nativeLinearShown or self.nativeRadialShown
+    HideNative(self)
     self.orientation = orientation
     if(self.orientation == "CLOCKWISE" or self.orientation == "ANTICLOCKWISE") then
       self.circular = true
@@ -497,6 +656,14 @@ local funcs = {
                                     self.slantFirst, self.slantMode)
       end
     end
+    if wasNative then
+      if self.progressType == "static" then
+        self:UpdateValue()
+      else
+        self:UpdateTime()
+      end
+      return
+    end
     self:SetValueOnTexture(self.progress)
     self:ReapplyAdditionalProgress()
   end,
@@ -523,6 +690,10 @@ local funcs = {
                                    self.color_anim_b or b, self.color_anim_a or a)
     self.foregroundSpinner:SetColor(self.color_anim_r or r, self.color_anim_g or g,
                                     self.color_anim_b or b, self.color_anim_a or a)
+    if self.nativeRadial then
+      self.nativeRadial:SetVertexColor(self.color_anim_r or r or 1, self.color_anim_g or g or 1,
+                                       self.color_anim_b or b or 1, self.color_anim_a or a or 1)
+    end
   end,
   ColorAnim = function(self, r, g, b, a)
     self.color_anim_r = r
@@ -534,6 +705,10 @@ local funcs = {
     end
     self.foreground:SetColor(r or self.color_r, g or self.color_g, b or self.color_b, a or self.color_a)
     self.foregroundSpinner:SetColor(r or self.color_r, g or self.color_g, b or self.color_b, a or self.color_a)
+    if self.nativeRadial then
+      self.nativeRadial:SetVertexColor(r or self.color_r or 1, g or self.color_g or 1, b or self.color_b or 1,
+                                       a or self.color_a or 1)
+    end
   end,
   GetColor = function(self)
     return self.color_r, self.color_g, self.color_b, self.color_a
@@ -587,6 +762,14 @@ local funcs = {
     self:ForAllLinears(self.foreground.SetTexRotation, self.effectiveTexRotation)
   end,
   UpdateTime = function(self)
+    if UpdateNativeTime(self) then
+      if self.FrameTick and (self.paused or self.FrameTick ~= NativeRadialTick) then
+        self.FrameTick = nil
+        self.subRegionEvents:RemoveSubscriber("FrameTick", self)
+      end
+      return
+    end
+    HideNative(self)
     local progress = 1
     if self.duration ~= 0 then
       local remaining = self.expirationTime - GetTime()
@@ -615,19 +798,22 @@ local funcs = {
     end
   end,
   UpdateValue = function(self)
-    local progress = 1
-    if(self.total > 0) then
-      progress = self.value / self.total;
-      if self.inverseDirection then
-        progress = 1 - progress;
+    if not UpdateNativeValue(self) then
+      HideNative(self)
+      local progress = 1
+      if(self.total > 0) then
+        progress = self.value / self.total;
+        if self.inverseDirection then
+          progress = 1 - progress;
+        end
       end
-    end
-    progress = progress > 0.0001 and progress or 0.0001;
-    if self.useSmoothProgress then
-      self.smoothProgress:SetSmoothedValue(progress);
-    else
-      self:SetValueOnTexture(progress);
-      self:ReapplyAdditionalProgress()
+      progress = progress > 0.0001 and progress or 0.0001;
+      if self.useSmoothProgress then
+        self.smoothProgress:SetSmoothedValue(progress);
+      else
+        self:SetValueOnTexture(progress);
+        self:ReapplyAdditionalProgress()
+      end
     end
 
     if self.FrameTick then
@@ -666,10 +852,16 @@ local funcs = {
     for _, extraSpinner in ipairs(self.extraSpinners) do
       extraSpinner:SetTextureOrAtlas(texture);
     end
+    if self.nativeRadial then
+      Private.SetTextureOrAtlas(self.nativeRadial, texture, self.textureWrapMode, self.textureWrapMode)
+    end
   end,
   SetForegroundDesaturated = function(self, b)
     self.foreground:SetDesaturated(b)
     self.foregroundSpinner:SetDesaturated(b)
+    if self.nativeRadial then
+      self.nativeRadial:SetDesaturated(b)
+    end
   end,
   SetBackgroundDesaturated = function(self, b)
     self.background:SetDesaturated(b)
@@ -716,6 +908,14 @@ local funcs = {
       return
     end
     self.inverseDirection = inverse
+    if self.nativeLinearShown or self.nativeRadialShown then
+      if self.progressType == "static" then
+        self:UpdateValue()
+      else
+        self:UpdateTime()
+      end
+      return
+    end
     local progress = 1 - self.progress;
     progress = progress > 0.0001 and progress or 0.0001;
     self:SetValueOnTexture(progress)

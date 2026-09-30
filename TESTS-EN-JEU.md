@@ -57,6 +57,9 @@ Tape chaque commande et note le résultat affiché.
 ### 2.3 Barre de vie et de mana en combat
 - [ok] Aura Progress Bar, trigger **Health** sur `target`, puis une autre **Power** sur `player`.
 - [ok, corrigé : UNIT_HEALTH, texte %p / %t natif] En combat, les deux barres bougent.
+- [ok 2026-09-30, natif] Même chose en **Progress Texture** : Left to Right sur Health `target`, Clockwise sur Power `player`, les deux bougent en combat.
+- [ok 2026-09-30, natif] Aura **Text** `%percenthealth% (%health / %maxhealth)` sur `target` : les chiffres changent en combat.
+- [ok 2026-09-30, natif] Aura **Progress Bar**, trigger **Cast** sur `target` : la barre apparaît et avance quand le mob incante en combat.
 - [ ] Ajoute une condition « Health < 50 % » : elle garde son dernier état en combat (attendu), et se remet à jour à la fin.
 
 ### 2.4 Global Cooldown

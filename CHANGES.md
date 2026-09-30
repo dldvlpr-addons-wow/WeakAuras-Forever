@@ -5,8 +5,91 @@ a Classic client running on the modern 12.x engine (interface 16001).
 
 Original work: The WeakAuras Team, GPL-2.0 (see `WeakAuras/LICENSE`).
 Modifications: dldvlpr, GPL-2.0.
+Portions taken from ForeverAuras (m33shoq, GPL-2.0), a WeakAuras fork for WoW Forever: the talent data reader and
+the talent picker widget, see 2026-09-30.
 
 This file lists every file changed from the upstream 5.22.0 release, as required by GPL-2.0 section 2a.
+
+## 2026-09-30
+
+### Changed
+- `WeakAuras/RegionTypes/ProgressTexture.lua`: a secret progress is drawn natively, like the Progress Bar. Left to
+  Right, Right to Left, Bottom to Top and Top to Bottom textures follow an invisible `StatusBar` (`SetMinMaxValues`
+  and `SetValue` for a secret value, `SetTimerDuration` for a duration object) through a mask on the foreground
+  texture. Clockwise and Anticlockwise textures draw a native radial fill (`Texture:SetRadialProgressBarPercent`)
+  from `state.secretPercent`, or from `EvaluateRemainingPercent` of the duration object on every frame. Not drawn
+  natively: an inverted static value, extra textures, slant, crop, mirror and the start and end angles. Seen in
+  game on WoW Forever 70124: a Left to Right texture on the health of a hostile target and a Clockwise texture on
+  the power of the player move in combat. Colors, texture and desaturation follow the native radial texture, and a
+  change of orientation or of the inverse setting redraws the native progress.
+- `WeakAuras/Prototypes.lua`: the Health and Power triggers set `state.secretPercent` from `UnitHealthPercent` or
+  `UnitPowerPercent` with the `CurveConstants.ZeroToOne` curve while the value is secret. `WeakAuras/WeakAuras.lua`
+  does not scrub it, `WeakAuras/RegionTypes/RegionPrototype.lua` passes it with the main progress.
+- `WeakAuras/RegionTypes/Text.lua`: a Text aura draws secret values natively like a Text sub element
+  (`WeakAuras/SubRegionTypes/SubText.lua`, shared `Private.UpdateNativeText`): a text that is only `%p` follows the
+  duration object, and a text made of `%p`, `%t`, `%value`, `%total`, `%health`, `%maxhealth`, `%power`, `%maxpower`,
+  `%percenthealth`, `%percentpower` and plain text shows the secret value, total and percent (the Health and Power
+  triggers store `secretPercentText` from the `CurveConstants.ScaleTo100` curve); a literal `%` is kept, a text
+  with `{` (raid markers, `%{...}` placeholders) is not drawn natively. Format options and other
+  placeholders keep the last readable values. The size of a Text aura is not recomputed while it is drawn natively.
+  A Text aura updates its progress before its text, so a native text shows the current event, not the previous one.
+  Once its FontString has shown a secret text, its width and height are secret: the size of the Text aura is
+  then left as is (seen in game on WoW Forever 70124).
+- `WeakAuras/Prototypes.lua`: while the cast of a unit is secret, the Cast trigger keeps a `durationObject` from
+  `UnitCastingDuration` or `UnitChannelDuration`, so the bar, the swipe and a `%p` text run in combat. Its name,
+  icon and spell ID are secret: the name is shown empty and the icon is drawn from `secretIcon`, instead of the
+  name and icon of the last readable cast. A trigger filtered by spell name or ID, by "Remaining Time" or by
+  "Interruptible" does not match a secret cast.
+- `WeakAuras/Prototypes.lua`: while a totem slot is secret, the Totem trigger keeps a `durationObject` from
+  `GetTotemDuration`; the totem name, icon and spell ID filters accept a secret totem
+  (`WeakAuras/GenericTrigger.lua`), the "Remaining Time" filter does not.
+- `WeakAuras/Init.lua`: `Private.UnitIsUnit(unitA, unitB)` (`Private.ExecEnv.UnitIsUnit` in trigger code) returns
+  the last readable result of the same pair when `UnitIsUnit` is secret (compound tokens like `targettarget` on
+  restricted maps), nil when there is none. Used by the Specific Unit, Unit is Unit, Ignore Self, Source Unit and
+  Destination Unit checks of the unit triggers (`WeakAuras/Prototypes.lua`) and by the unit event dispatch
+  (`WeakAuras/GenericTrigger.lua`).
+- `WeakAuras/WeakAuras.lua`: internal version 91, the one ForeverAuras now uses too, so an aura exported from
+  either addon imports into the other without a version warning. Auras saved or exported at 90 still load: no
+  migration step is needed, `Modernize` only raises their number. `WeakAuras/ForeverAurasImport.lua`: since the
+  number no longer tells the two addons apart, a ForeverAuras export is found by its content only: ForeverAuras
+  trigger and sub element types, dispel indicator, Blizzard aura display, the ForeverAuras fields of the Swing
+  Timer, Tracking, Ammo and Bag Space triggers, a TimelineParser trigger, a media path to `AddOns\ForeverAuras`
+  (one or more separators) in any string, or a `ForeverAuras` API reference in custom code. Not detectable: a
+  ForeverAuras aura whose only triggers are Role or Equipment Durability, imported as is. The Tracking conversion
+  only runs on ForeverAuras fields, so an aura of this addon with a ForeverAuras media path keeps its Tracking
+  settings. `WeakAuras/Transmission.lua`: comment.
+
+### Fixed
+- `WeakAuras/Compatibility.lua`: on WoW Forever, `C_SpecializationInfo.GetTalentInfo` refuses the Classic Era
+  query (`specializationIndex`, `talentIndex`) with "query.tier must be specified", and the error stopped the
+  import of any aura with a Talent load condition (`GetTalentInfo(): C_SpecializationInfo.GetTalent: query.tier
+  must be specified`). The call is now under `pcall` and returns nothing on this client.
+- Talents on WoW Forever, like ForeverAuras: `WeakAuras/Compatibility.lua` sets `Private.traitTalents` (retail, or a
+  WoW Forever client with `C_Traits` and `C_SpecializationInfo.GetCombatConfigIDForSpecGroup`).
+  `WeakAuras/Prototypes.lua`: `Private.GetTalentConfigID()` and `Private.GetTalentData(specId)` (copied from
+  ForeverAuras `Types_Forever.lua`) read the Classic
+  talent trees of the player's specialization from the trait config of the active spec group (`C_Traits`), one
+  entry per trait entry ID, the same IDs ForeverAuras exports. The talent check frame, `WeakAuras.CheckTalentId`
+  and `WeakAuras.GetTalentById` run on this client (`ACTIVE_TALENT_GROUP_CHANGED` refreshes them too), and the
+  Talent and Or Talent load conditions and the Talent Known trigger use them, with the talent picker
+  (`WeakAurasOptions/AceGUI-Widgets/AceGUIWidget-WeakAurasMiniTalent.lua`, from ForeverAuras, listed in
+  `WeakAurasOptions/WeakAurasOptions.toc`) once a single Class and Specialization is selected.
+  `WeakAuras/GenericTrigger.lua`: the talents are read after `PLAYER_ENTERING_WORLD` on this client. The
+  ForeverAuras Specialization load condition (`forever_spec`) is not converted on import.
+- `WeakAuras/RegionTypes/RegionPrototype.lua`: on WoW Forever, a texture path that ends with `.tga` or `.blp` does
+  not load (seen in game on 70124: `SetTexture` leaves the texture empty, the same path without the extension
+  works). `Private.SetTextureOrAtlas` strips the extension, so the `.tga` entries of the texture picker (rings,
+  circles, squares) and imported auras that use them are drawn.
+- `WeakAuras/GenericTrigger.lua`: while cooldowns are secret, the Global Cooldown trigger reads whether the GCD runs
+  from `isActive` of `C_Spell.GetSpellCooldown`, which is never secret. It relied on `IsZero` and `HasExpired` of the
+  duration object, and `IsZero` is secret in combat on WoW Forever, so the trigger never showed in combat.
+- `WeakAuras/BuffTrigger2.lua`: a `UNIT_AURA` whose unit or `isFullUpdate` flag is already secret is handled like
+  any update received while aura data is secret, even when the `RestrictionChanged` callback has not fired yet. At
+  the start of a fight, the payload could be secret one frame before that callback, which printed "Aura triggers
+  paused until the end of combat" (`attempt to perform boolean test on field 'isFullUpdate'`). For the same reason,
+  a full scan of a unit and the error filter of the aura updates also ask `Private.IsRestricted("auras")`, so that
+  a scan started by another event during that frame (target change, encounter start, roster update) keeps the
+  matched auras instead of cleaning them before failing on secret data.
 
 ## 2026-09-29
 
@@ -101,7 +184,7 @@ This file lists every file changed from the upstream 5.22.0 release, as required
   (`C_CooldownViewer`). `WeakAurasOptions/LoadOptions.lua`: the Cooldown trigger has a From the Cooldown Manager
   picker that sets the spell to an exact spell ID of that catalog.
 - `WeakAuras/ForeverAurasImport.lua` (new, listed in `WeakAuras/WeakAuras.toc`): auras exported by ForeverAuras
-  (internal version 91 and later, or older ones with ForeverAuras trigger or sub element types) are converted on
+  (found by their ForeverAuras trigger or sub element types, see 2026-09-30) are converted on
   import, before the version check (`WeakAuras/Transmission.lua`). Their
   Cooldown Manager triggers become Cooldown, Aura or Item Cooldown triggers, Blizzard Aura triggers become Aura
   triggers, dispel type borders become borders colored by dispel type, the Swing Timer weapon and the Ammo

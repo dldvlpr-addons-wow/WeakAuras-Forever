@@ -7,9 +7,9 @@ local Private = select(2, ...)
 -- Converts auras exported by ForeverAuras (a WeakAuras fork for WoW Forever) to this addon's format.
 -- Only the saved data format is read: types without equivalent are kept disabled, and listed in the chat.
 
--- ponytail: ForeverAuras is the only known source of internal versions from 91; a newer upstream WeakAuras there
--- would be converted too. Older ForeverAuras exports (88 to 90, numbered unlike ours) are found by their content.
-local foreverAurasVersion = 91
+-- ForeverAuras numbers its internal versions like this addon, so its exports are found by their content only
+local addonsPathPrefix = "[Aa][Dd][Dd][Oo][Nn][Ss][\\/]+"
+local apiReferencePattern = "ForeverAuras([%.:%[])"
 
 local showOnByCooldownShow = {
   always = "showAlways",
@@ -31,13 +31,35 @@ local unsupportedEvents = {
   ["TimelineParser Stage"] = true,
 }
 
+-- Code fields: custom*, message_custom, and the code of a Custom Check condition
+local function IsCodeField(tbl, key)
+  return type(key) == "string" and (key:find("custom", 1, true) or (key == "value" and tbl.variable == "customcheck"))
+end
+
+-- Media paths of ForeverAuras in any string, its API in custom code only
+local function HasForeverAurasReferences(tbl)
+  for key, value in pairs(tbl) do
+    if type(value) == "string" then
+      if value:find(addonsPathPrefix .. "ForeverAuras") or (IsCodeField(tbl, key) and value:find(apiReferencePattern)) then
+        return true
+      end
+    elseif type(value) == "table" and HasForeverAurasReferences(value) then
+      return true
+    end
+  end
+  return false
+end
+
 local function HasForeverAurasContent(data)
   if data.cdmDispelIndicator or data.blizzardAuraDisplay then
     return true
   end
   for _, triggerData in ipairs(type(data.triggers) == "table" and data.triggers or {}) do
     local trigger = type(triggerData) == "table" and triggerData.trigger
-    if type(trigger) == "table" and (trigger.type == "cdm" or trigger.type == "secretAura") then
+    if type(trigger) == "table" and (trigger.type == "cdm" or trigger.type == "secretAura"
+       or trigger.swingType ~= nil or trigger.trackingType ~= nil or trigger.trackingShow ~= nil
+       or trigger.ammoItemIDs ~= nil or trigger.use_totalSlots ~= nil or trigger.use_freePercent ~= nil
+       or unsupportedEvents[trigger.event]) then
       return true
     end
   end
@@ -46,22 +68,19 @@ local function HasForeverAurasContent(data)
       return true
     end
   end
-  return false
+  return HasForeverAurasReferences(data)
 end
 
 local function IsForeverAurasData(data)
-  return type(data) == "table"
-         and ((tonumber(data.internalVersion) or 0) >= foreverAurasVersion or HasForeverAurasContent(data))
+  return type(data) == "table" and HasForeverAurasContent(data)
 end
 
--- Media paths of ForeverAuras in every string, and its API in custom code only
 local function RenameReferences(tbl)
   for key, value in pairs(tbl) do
     if type(value) == "string" then
-      value = value:gsub("([Aa][Dd][Dd][Oo][Nn][Ss][\\/])ForeverAuras", "%1WeakAuras")
-      -- Code fields: custom*, message_custom, and the code of a Custom Check condition
-      if type(key) == "string" and (key:find("custom", 1, true) or (key == "value" and tbl.variable == "customcheck")) then
-        value = value:gsub("ForeverAuras([%.:%[])", "WeakAuras%1")
+      value = value:gsub("(" .. addonsPathPrefix .. ")ForeverAuras", "%1WeakAuras")
+      if IsCodeField(tbl, key) then
+        value = value:gsub(apiReferencePattern, "WeakAuras%1")
       end
       tbl[key] = value
     elseif type(value) == "table" then
@@ -249,7 +268,7 @@ local function ConvertTrigger(trigger, warn)
     end
   elseif trigger.event == "Role" then
     trigger.use_role = trigger.role ~= nil or nil
-  elseif trigger.event == "Tracking" then
+  elseif trigger.event == "Tracking" and (trigger.trackingType ~= nil or trigger.trackingShow ~= nil) then
     local spellID = tonumber(trigger.trackingType)
     trigger.use_trackingSpell = spellID and true or nil
     trigger.trackingSpell = spellID and { spellID } or nil

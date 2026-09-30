@@ -1282,7 +1282,7 @@ function HandleEvent(frame, event, arg1, arg2, ...)
       Private.CheckItemSlotCooldowns()
       Private.StopProfileSystem("generictrigger WA_DELAYED_PLAYER_ENTERING_WORLD");
       Private.PreShowModels()
-      if WeakAuras.IsRetail() then
+      if Private.traitTalents then
         Private.CheckTalentsForLoad("WA_DELAYED_PLAYER_ENTERING_WORLD")
       end
     end,
@@ -1309,7 +1309,7 @@ local brokenUnitMap = {
 function HandleUnitEvent(frame, event, unit, ...)
   Private.StartProfileSystem("generictrigger " .. event .. " " .. unit);
   if not(WeakAuras.IsPaused()) then
-    if UnitIsUnit(unit, frame.unit)
+    if Private.UnitIsUnit(unit, frame.unit)
        or (brokenUnitMap[unit] == frame.unit and not UnitExists(unit))
     then
       Private.ScanUnitEvents(event, frame.unit, ...);
@@ -2479,8 +2479,9 @@ do
     local event;
     local startTime, duration, modRate
     local gcdSpellId = WeakAuras.IsClassicOrTBCOrWrath() and 29515 or 61304
+    local spellCooldownInfo
     if WeakAuras.IsClassicOrTBCOrWrath() then
-      local spellCooldownInfo = C_Spell.GetSpellCooldown(29515)
+      spellCooldownInfo = C_Spell.GetSpellCooldown(29515)
       if spellCooldownInfo then
         startTime = spellCooldownInfo.startTime
         duration = spellCooldownInfo.duration
@@ -2492,7 +2493,7 @@ do
         shootDuration = shootInfo.duration
       end
     else
-      local spellCooldownInfo = C_Spell.GetSpellCooldown(61304);
+      spellCooldownInfo = C_Spell.GetSpellCooldown(61304);
       if spellCooldownInfo then
         startTime = spellCooldownInfo.startTime
         duration = spellCooldownInfo.duration
@@ -2504,9 +2505,16 @@ do
         return
       end
       startTime, duration, modRate = 0, 0, nil
-      -- The duration object stays drawable, and tells whether the GCD runs
+      -- The duration object stays drawable; isActive is never secret and tells whether the GCD runs
       local ok, durationObject = pcall(C_Spell.GetSpellCooldownDuration, gcdSpellId)
-      if ok and Private.IsDurationObject(durationObject) and IsDurationObjectRunning(durationObject) then
+      local running
+      if ok and Private.IsDurationObject(durationObject) then
+        running = spellCooldownInfo and spellCooldownInfo.isActive
+        if type(running) ~= "boolean" or Private.IsSecret(running) then
+          running = IsDurationObjectRunning(durationObject)
+        end
+      end
+      if running then
         if gcdDurationObject ~= durationObject then
           event = gcdDurationObject and "GCD_CHANGE" or "GCD_START"
           gcdDurationObject = durationObject
@@ -4344,6 +4352,9 @@ function Private.WatchStagger()
 end
 
 function Private.ExecEnv.CheckTotemName(totemName, triggerTotemName, triggerTotemPattern, triggerTotemOperator)
+  if Private.IsSecret(totemName) then
+    return true
+  end
   if not totemName or totemName == "" then
     return false
   end
@@ -4372,14 +4383,14 @@ function Private.ExecEnv.CheckTotemName(totemName, triggerTotemName, triggerTote
 end
 
 function Private.ExecEnv.CheckTotemIcon(totemIcon, triggerTotemIcon, operator)
-  if not triggerTotemIcon then
+  if not triggerTotemIcon or Private.IsSecret(totemIcon) then
     return true
   end
   return (totemIcon == triggerTotemIcon) == (operator == "==")
 end
 
 function Private.ExecEnv.CheckTotemSpellId(spellId, triggerSpellId, followoverride)
-  if not triggerSpellId then
+  if not triggerSpellId or Private.IsSecret(spellId) then
     return true
   end
 

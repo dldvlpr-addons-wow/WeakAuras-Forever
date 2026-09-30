@@ -188,7 +188,7 @@ local function modify(parent, region, data)
 
       local height = text:GetStringHeight();
 
-      if(region.height ~= height) then
+      if not Private.IsSecret(height) and region.height ~= height then
         region.height = height
         region:SetHeight(height)
         if data.parent then
@@ -214,7 +214,7 @@ local function modify(parent, region, data)
         text:SetParent(UIParent)
         local width = text:GetWidth();
         local height = text:GetStringHeight();
-        if(width ~= region.width or height ~= region.height ) then
+        if not Private.IsSecret(width, height) and (width ~= region.width or height ~= region.height) then
           region.width = width
           region.height = height
           region:SetWidth(region.width);
@@ -275,9 +275,15 @@ local function modify(parent, region, data)
   end
 
   function region:ConfigureTextUpdate()
+    if Private.UnbindDurationText then
+      Private.UnbindDurationText(self)
+    end
     local UpdateText
     if self.displayText and Private.ContainsAnyPlaceHolders(self.displayText) then
       UpdateText = function()
+        if Private.UpdateNativeText and Private.UpdateNativeText(self, self, self.displayText) then
+          return
+        end
         local textStr = Private.ReplacePlaceHolders(self.displayText, self, nil, false, formatters);
         if textStr == "" then
           textStr = " "
@@ -295,14 +301,14 @@ local function modify(parent, region, data)
           self.values.lastCustomTextUpdate = GetTime()
           self.values.customTextUpdated = true
         end
-        UpdateText()
         self:UpdateProgress()
+        UpdateText()
       end
     else
       if UpdateText then
         Update = function()
-          UpdateText()
           self:UpdateProgress()
+          UpdateText()
         end
       else
         Update = function() self:UpdateProgress() end
@@ -395,6 +401,8 @@ local function modify(parent, region, data)
   end
 
   region.displayText = data.displayText
+  region.durationTimeFormat = data.displayText_format_p_time_format
+  region.durationThreshold = data.displayText_format_p_time_dynamic_threshold
   region:ConfigureTextUpdate()
   region:ConfigureSubscribers()
   Private.regionPrototype.modifyFinish(parent, region, data);

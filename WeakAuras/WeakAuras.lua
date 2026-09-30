@@ -3,7 +3,7 @@ local AddonName = ...
 ---@class Private
 local Private = select(2, ...)
 
-local internalVersion = 90
+local internalVersion = 91
 
 -- Lua APIs
 local insert = table.insert
@@ -5112,7 +5112,9 @@ local function ScrubSecretState(state)
   end
   for key, value in pairs(state) do
     -- Kept secret for native widgets: progress, and the stack text and icon of BuffTrigger2
-    if key ~= "secretValue" and key ~= "secretTotal" and key ~= "secretStacks" and key ~= "secretIcon" then
+    if key ~= "secretValue" and key ~= "secretTotal" and key ~= "secretPercent" and key ~= "secretPercentText"
+       and key ~= "secretStacks" and key ~= "secretIcon"
+    then
       if issecretvalue(value) then
         state[key] = last[key]
       else
@@ -6701,7 +6703,7 @@ function Private.ExecEnv.CreateSpellChecker()
       self.spellIds[spellId] = true
     end,
     Check = function(self, spellId)
-      if spellId then
+      if spellId and not Private.IsSecret(spellId) then
         return self.spellIds[spellId] or self.names[Private.ExecEnv.GetSpellName(spellId)]
       end
     end,

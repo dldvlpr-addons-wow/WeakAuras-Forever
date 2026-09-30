@@ -409,7 +409,7 @@ local function UpdateProgressFromState(self, minMaxConfig, state, progressSource
   local useAdditionalProgress = progressSource[9]
 
   self.durationObject = nil
-  self.secretValue, self.secretTotal = nil, nil
+  self.secretValue, self.secretTotal, self.secretPercent = nil, nil, nil
   if not state then
     self.minProgress, self.maxProgress = nil, nil
     self.progressType = "timed"
@@ -462,6 +462,9 @@ local function UpdateProgressFromState(self, minMaxConfig, state, progressSource
                 or minMaxConfig.adjustedMax or minMaxConfig.adjustedMaxRelPercent) then
       self.secretValue = state.secretValue
       self.secretTotal = state.secretTotal
+      if type(state.secretPercent) == "number" then
+        self.secretPercent = state.secretPercent
+      end
     end
     if self.UpdateValue then
       self:UpdateValue()
@@ -589,7 +592,7 @@ local function UpdateProgressFromAuto(self, minMaxConfig, state)
     UpdateProgressFromState(self, minMaxConfig, state, autoStaticProgressSource)
   else
     self.durationObject = nil
-    self.secretValue, self.secretTotal = nil, nil
+    self.secretValue, self.secretTotal, self.secretPercent = nil, nil, nil
     self.minProgress, self.maxProgress = nil, nil
     self.progressType = "timed"
     self.duration = 0
@@ -627,7 +630,7 @@ local function UpdateProgressFromManual(self, minMaxConfig, state, value, total)
     max = total
   end
   self.durationObject = nil
-  self.secretValue, self.secretTotal = nil, nil
+  self.secretValue, self.secretTotal, self.secretPercent = nil, nil, nil
   self.minProgress, self.maxProgress = adjustMin, max
   self.progressType = "static"
   self.value = value - adjustMin
@@ -951,7 +954,7 @@ function Private.regionPrototype.AddSetDurationInfo(region, uid)
       -- For now don't warn against SetDurationInfo
       -- Private.AuraWarnings.UpdateWarning(uid, "SetDurationInfo", "warning", L["Aura is using deprecated SetDurationInfo"])
       self.durationObject = nil
-      self.secretValue, self.secretTotal = nil, nil
+      self.secretValue, self.secretTotal, self.secretPercent = nil, nil, nil
       if customValue then
         local adjustMin = region.adjustedMin or 0;
         local max = self.adjustedMax or expirationTime
@@ -1198,6 +1201,9 @@ function Private.regionPrototype.AddExpandFunction(data, region, cloneId, parent
 end
 
 function Private.SetTextureOrAtlas(texture, path, wrapModeH, wrapModeV)
+  if type(path) == "string" and WeakAuras.BuildInfo and WeakAuras.BuildInfo >= 16000 and WeakAuras.BuildInfo < 20000 then
+    path = path:gsub("%.[Tt][Gg][Aa]$", ""):gsub("%.[Bb][Ll][Pp]$", "")
+  end
   texture.IsAtlas = type(path) == "string" and GetAtlasInfo(path) ~= nil
   if texture.IsAtlas then
     return texture:SetAtlas(path);

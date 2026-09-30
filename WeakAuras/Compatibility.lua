@@ -57,6 +57,10 @@ Private.hasSpecializations = WeakAuras.IsClassicEra() and C_SpecializationInfo ~
   and C_SpecializationInfo.GetSpecialization ~= nil and C_SpecializationInfo.GetNumSpecializationsForClassID ~= nil
   and GetSpecializationInfoForClassID ~= nil
 
+-- Talents read from the trait trees (C_Traits): retail, and WoW Forever for its Classic talent trees
+Private.traitTalents = WeakAuras.IsRetail() or (Private.hasSpecializations and C_Traits ~= nil
+  and C_SpecializationInfo.GetActiveSpecGroup ~= nil and C_SpecializationInfo.GetCombatConfigIDForSpecGroup ~= nil)
+
 if WeakAuras.IsMists() then
   local specsByClassID = {
     [0] = { 74, 81, 79 },
@@ -98,8 +102,8 @@ if C_SpecializationInfo and C_SpecializationInfo.GetTalentInfo then
       talentInfoQuery.isInspect = isInspect
       talentInfoQuery.isPet = isPet
       talentInfoQuery.groupIndex = groupIndex
-      local talentInfo = C_SpecializationInfo.GetTalentInfo(talentInfoQuery)
-      if not talentInfo then
+      local ok, talentInfo = pcall(C_SpecializationInfo.GetTalentInfo, talentInfoQuery)
+      if not ok or not talentInfo then
         return nil
       end
 

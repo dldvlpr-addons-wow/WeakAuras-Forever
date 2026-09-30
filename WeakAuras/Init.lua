@@ -439,6 +439,23 @@ function Private.IsSecret(...)
   return false
 end
 
+local lastUnitIsUnit = {}
+function Private.UnitIsUnit(unitA, unitB)
+  local result = UnitIsUnit(unitA, unitB)
+  local key = type(unitA) == "string" and type(unitB) == "string" and not Private.IsSecret(unitA, unitB)
+    and (unitA .. "\0" .. unitB)
+  if Private.IsSecret(result) then
+    if key then
+      return lastUnitIsUnit[key]
+    end
+    return nil
+  end
+  if key then
+    lastUnitIsUnit[key] = result
+  end
+  return result
+end
+
 local restrictionQueries = {
   auras = "ShouldAurasBeSecret",
   cooldowns = "ShouldCooldownsBeSecret",
@@ -791,6 +808,7 @@ end
 Private.ExecEnv = {}
 -- For the built-in trigger code, see ConstructFunction
 Private.ExecEnv.IsSecret = Private.IsSecret
+Private.ExecEnv.UnitIsUnit = Private.UnitIsUnit
 
 -- If WeakAuras shuts down due to being installed on the wrong target, keep the bindings from erroring
 --- @type fun(type: string)

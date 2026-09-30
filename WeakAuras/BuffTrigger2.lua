@@ -2140,7 +2140,7 @@ do
               RemoveMatchData(matchDataChanged, unit, filter, auraInstanceID)
             end
           end
-        elseif aurasRestricted then
+        elseif aurasRestricted or Private.IsRestricted("auras") then
           -- A full scan would clean the matched auras before failing on secret data
           restrictedRefreshUnits[unit] = true
           secretRescanPending = true
@@ -2477,7 +2477,9 @@ local function EventHandler(frame, event, arg1, arg2, ...)
     if arg1 == "player" then
       ScanGroupUnit(time, matchDataChanged, nil, "vehicle")
     end
-  elseif event == "UNIT_AURA" and newAPI and aurasRestricted then
+  elseif event == "UNIT_AURA" and newAPI
+         and (aurasRestricted or Private.IsSecret(arg1, arg2 and arg2.isFullUpdate))
+  then
     -- Refreshed once per frame in OnUpdate, every tracked unit when the unit itself is secret
     if Private.IsSecret(arg1) then
       for unit in pairs(matchData) do
@@ -2866,7 +2868,7 @@ Buff2Frame:SetScript("OnUpdate", function()
           -- ponytail: a start nested deeper (region, conditions) stays open, unwind the profiler if it matters
           Private.StopProfileAura(id)
           secretRescanPending = true
-          if not aurasRestricted then
+          if not (aurasRestricted or Private.IsRestricted("auras")) then
             geterrorhandler()(errorMessage)
           end
         end

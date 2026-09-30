@@ -100,6 +100,7 @@ AceGUI-Widgets\AceGUIWidget-WeakAurasMultiLineEditBoxWithEnter.lua
 AceGUI-Widgets\AceGUIWidget-WeakAurasNewButton.lua
 AceGUI-Widgets\AceGUIWidget-WeakAurasImportButton.lua
 AceGUI-Widgets\AceGUIWidget-WeakAurasToolbarButton.lua
+AceGUI-Widgets\AceGUIWidget-WeakAurasMiniTalent.lua
 AceGUI-Widgets\AceGUIWidget-WeakAurasTwoColumnDropDown.lua
 AceGUI-Widgets\AceGUIWidget-WeakAurasSnippetButton.lua
 AceGUI-Widgets\AceGUIWidget-WeakAurasAnchorButtons.lua
