@@ -288,7 +288,7 @@ function spellCache.BestKeyMatch(nearkey)
   local bestKey = "";
   local bestDistance = math.huge;
   local partialMatches = {};
-  if cache[nearkey] then
+  if cache[nearkey] or not OptionsPrivate.Private.hasCombatLog then
     return nearkey
   end
   for key, value in pairs(cache) do

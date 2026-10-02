@@ -26,6 +26,11 @@ This file lists every file changed from the upstream 5.22.0 release, as required
   workflow, with the game version read from `## Interface` and the first section of `WeakAuras/CHANGELOG.md` as
   changelog. The workflow stops before packaging when that section is not for the pushed tag.
 
+### Fixed
+- `WeakAurasOptions/Cache.lua`: an aura name typed in the Aura trigger (and in the Load tab) is kept as typed when
+  there is no combat log. The spell cache is never built there (see 2026-09-26), so the name correction found no
+  match, stored an empty name, and the trigger matched nothing while an extra "or" row appeared.
+
 ## 2026-09-30
 
 ### Changed
