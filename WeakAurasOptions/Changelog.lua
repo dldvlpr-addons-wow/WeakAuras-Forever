@@ -10,16 +10,31 @@ local AddonName = ...
 ---@class OptionsPrivate
 local OptionsPrivate = select(2, ...)
 OptionsPrivate.changelog = {
-  versionString = '1.3.0',
-  dateString = '2026-09-30',
+  versionString = '1.3.1',
+  dateString = '2026-10-02',
   fullChangeLogUrl = 'https://github.com/dldvlpr-addons-wow/WeakAuras-Forever/blob/main/CHANGES.md',
   highlightText = [==[
-- Progress Textures move in combat: linear and circular fills follow the hidden value, like the Progress Bar
-- Text auras show health, power and percent in combat: %health, %maxhealth, %percenthealth, %power, %maxpower, %percentpower
-- Cast bar on your target: the Cast trigger follows the cast in combat, with the icon of the spell
-- Totem timers keep running in combat
-- Talents: the Talent load conditions and the Talent Known trigger work on WoW Forever, with a talent picker, like ForeverAuras
-- Auras published for ForeverAuras import as they are, talent conditions included]==],  commitText = [==[1.3.0 (2026-09-30):
+- DoT timers without custom code: the Spell Cast Succeeded trigger has a new Hide when target dies option]==],  commitText = [==[1.3.1 (2026-10-02):
+
+New:
+
+- Spell Cast Succeeded trigger: Hide when target dies. The timer started by your cast hides when your current target dies, before its duration ends. Only the death of your current target is seen: if you change target and the mob with your DoT dies, the timer keeps running, and if the new target dies, the timer is hidden
+
+Changes:
+
+- Guide (/wa tutorial), section 5: the DoT timer recipe uses the Spell Cast Succeeded trigger, with no custom code. The ready-made Immolate aura uses this trigger too: importing it again updates the old one
+
+Known limitations:
+
+- Talents: not tested in game yet. The ForeverAuras "Specialization" load condition is ignored on import: the aura then loads for every specialization of its class
+- Buffs and debuffs are hidden in combat: a buff shown before the pull keeps counting down, stacks stay frozen, and a buff applied for the first time in combat only shows when combat ends
+- The Native Filter of the Aura trigger shows nothing at the moment
+- Combat log triggers never fire: the game forbids the combat log to addons
+- The Blizzard Cooldown Manager is not enabled for every class on the WoW Forever beta
+- Not tested in game yet: Hide when target dies, Totem trigger in combat, Equipment Durability, Tracking, Ammo, Instance Type, off hand and ranged swing timer, dispel type colors, dungeons and raids
+- Nameplate anchoring only works with the default Blizzard nameplates
+
+1.3.0 (2026-09-30):
 
 New:
 
