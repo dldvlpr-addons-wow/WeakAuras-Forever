@@ -1,9 +1,9 @@
 name: Release
 
-# Pushing a tag named like the version (e.g. 1.3.1, 1.4.0-beta) builds the zip with the BigWigs packager,
+# Pushing a tag named like the version (e.g. v1.3.1, 1.3.1, v1.4.0-beta) builds the zip with the BigWigs packager,
 # publishes it as a GitHub release and uploads it to CurseForge.
-# The tag must be the version written in the first heading of WeakAuras/CHANGELOG.md: that section becomes the
-# CurseForge changelog.
+# The tag, without its "v" prefix, must be the version written in the first heading of WeakAuras/CHANGELOG.md:
+# that section becomes the CurseForge changelog.
 # CurseForge needs the CF_API_KEY repository secret. The upload is done here, not by the packager, so the file is
 # tagged with the WoW Forever game version read from "## Interface" (16001 -> 1.60.1) and never with a retail one.
 # Wago is skipped until the .toc files carry "## X-Wago-ID" and the WAGO_API_TOKEN secret exists.
@@ -28,9 +28,10 @@ jobs:
         env:
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
         run: |
+          version="${TAG#v}"
           case "$(head -n1 WeakAuras/CHANGELOG.md) " in
-            "# WeakAuras Forever $TAG "*) ;;
-            *) echo "::error::The first heading of WeakAuras/CHANGELOG.md is not for $TAG"; exit 1 ;;
+            "# WeakAuras Forever $version "*) ;;
+            *) echo "::error::The first heading of WeakAuras/CHANGELOG.md is not for $version"; exit 1 ;;
           esac
           [ -n "$CF_API_KEY" ] || { echo "::error::The CF_API_KEY secret is missing"; exit 1; }
 
@@ -46,6 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           api=https://wow.curseforge.com/api
+          version="${TAG#v}"
 
           zip=(.release/*.zip)
           if [ "${#zip[@]}" -ne 1 ] || [ ! -f "${zip[0]}" ]; then
@@ -68,7 +70,7 @@ jobs:
 
           metadata=$(jq -n \
             --arg changelog "$(awk '/^# /{n++} n==1' WeakAuras/CHANGELOG.md)" \
-            --arg name "WeakAuras Forever $TAG" \
+            --arg name "WeakAuras Forever $version" \
             --arg type "$release_type" \
             --argjson versions "$game_version_ids" \
             '{changelog: $changelog, changelogType: "markdown", displayName: $name, gameVersions: $versions, releaseType: $type}')
