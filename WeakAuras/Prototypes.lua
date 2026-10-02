@@ -8581,6 +8581,9 @@ Private.event_prototypes = {
       local result = {}
       local unit = trigger.unit
       AddUnitEventForEvents(result, unit, "UNIT_SPELLCAST_SUCCEEDED")
+      if trigger.use_hideOnTargetDeath then
+        AddUnitEventForEvents(result, nil, "PLAYER_TARGET_DIED")
+      end
       return result
     end,
     name = L["Spell Cast Succeeded"],
@@ -8644,6 +8647,13 @@ Private.event_prototypes = {
         hidden = true,
         init = "Private.ExecEnv.GetSpellName(spellId or 0)",
         store = true,
+        test = "true"
+      },
+      {
+        name = "hideOnTargetDeath",
+        display = L["Hide when target dies"],
+        desc = L["Hides the timer when your current target dies. The death of a mob that is no longer your target is not seen. If you change target and the new target dies, the timer is hidden too."],
+        type = "toggle",
         test = "true"
       },
     },

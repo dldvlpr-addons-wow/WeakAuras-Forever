@@ -664,7 +664,13 @@ local function RunTriggerFunc(allStates, data, id, triggernum, event, arg1, arg2
   local unitForUnitTrigger
   local cloneIdForUnitTrigger
 
-  if(data.triggerFunc) then
+  if event == "PLAYER_TARGET_DIED" and data.prototype and data.trigger.use_hideOnTargetDeath then
+    for cloneId in pairs(allStates) do
+      if Private.EndEvent(allStates, cloneId) then
+        updateTriggerState = true
+      end
+    end
+  elseif(data.triggerFunc) then
     local untriggerCheck = false;
     if (data.statesParameter == "full") then
       local ok, returnValue

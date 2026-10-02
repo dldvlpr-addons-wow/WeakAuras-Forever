@@ -138,73 +138,31 @@ Use them for what only the game can see.
 
 ## 5. Recipe: DoT or buff timer from your cast
 
-Example: Corruption on your target.
+Not tested in game yet. No custom code. Example: Corruption on your target.
 
 1. Out of combat, get the ID of your rank: `/dump C_Spell.GetSpellInfo("Corruption")`. Note the `spellID`.
 2. `/wa`, **New**, **Icon** (or **Progress Bar**).
 3. **Trigger** tab:
-   - Type: **Custom**
-   - Event Type: **Event**
-   - Event(s): `UNIT_SPELLCAST_SUCCEEDED:player`
-   - Custom Trigger:
+   - Type: **Other Events**, then **Spell Cast Succeeded**
+   - Caster Unit: **Player**
+   - **Exact Spell ID(s)**: your spell ID (for example 11672)
+   - **Hide when target dies**: checked
+   - **Hide After**, Duration: the spell duration from its tooltip (Corruption: 18)
+4. Test on any mob.
 
-     ```lua
-     function(event, unit, castGUID, spellID)
-         if issecretvalue and issecretvalue(spellID) then return false end
-         return spellID == 11672 -- replace with your spell ID
-     end
-     ```
-
-   - Hide: **Timed**, Duration: the spell duration from its tooltip (Corruption: 18).
-4. **Display** tab: set the icon of the spell manually.
-5. Test on any mob.
+The trigger gives the icon of the spell.
 
 Limits: one aura per spell. Casting again restarts the timer. The aura does not know if the spell was resisted
 or dispelled. It follows one target only.
 
-### Variant: hide the timer when your target dies
-
-Tested in game on Forever. Same aura, with a different trigger:
-
-- Type: **Custom**
-- Event Type: **Trigger State Updater (Advanced)**
-- Event(s): `UNIT_SPELLCAST_SUCCEEDED:player PLAYER_TARGET_DIED`
-- Custom Trigger:
-
-  ```lua
-  function(allstates, event, unit, castGUID, spellID)
-      if event == "UNIT_SPELLCAST_SUCCEEDED" then
-          if issecretvalue and issecretvalue(spellID) then return false end
-          if spellID ~= 348 then return false end -- replace with your spell ID
-          allstates[""] = {
-              show = true,
-              changed = true,
-              progressType = "timed",
-              duration = 15, -- replace with the spell duration
-              expirationTime = GetTime() + 15, -- same duration here
-              autoHide = true,
-          }
-          return true
-      elseif event == "PLAYER_TARGET_DIED" then
-          local state = allstates[""]
-          if state and state.show then
-              state.show = false
-              state.changed = true
-              return true
-          end
-      end
-      return false
-  end
-  ```
-
-There is no **Hide** setting with this trigger type: the duration is in the code.
-`PLAYER_TARGET_DIED` only fires for your current target. If you change target and the mob with your DoT dies,
-the timer keeps running.
+**Hide when target dies** only sees the death of your current target. If you change target and the mob with your
+DoT dies, the timer keeps running. If you change target and the new target dies, the timer is hidden. For a buff
+on yourself, leave the box unchecked.
 
 Ready-made example for Immolate rank 1 (spell ID 348, 15 seconds). Copy this text, then `/wa`, **Import**:
 
 ```
-!WA:2!fsvqVTTnu4LEybqDOa1hkYrcVSIeuJGUS0GHb4drXYjgWDnq2EOddfUuIpjraksbskNKnSDWNAVMFc(8ozGUFa76Uiu0Fb7Nq)fmsk7SQKmmDq8P3337XhFFpQn63kVfPf5npCbnwWhjkLXWgVhxQZeYxuOPcUYBHesngJVSa8TSK4yhWHHknwQ9IsOCQkZZ3SO9MRL00uqQEWJLRm)dFTj2O4sLwKVSEzQ11stc0qzbX8oeMbCD0PaMPZ8lnPkQGHVeKZvfaJnGO8ICuuf7p57hmE6OZcgo84JgzSMC8Xbb9c69D1rGoB4r)yq40XhfEsW4P9ge0lKJZbL3FRkRtYOYKe6flNwhVH44RHotcgOqx6R(IlU3FLuYDh4DWmMRGvDqoMDq2YSdkgR0NmzqVoO6sT3UEiZdnPMgQBxu7)RsUnsNbCh)vXqvkiwc6zywjGWCstp7SEpCbImUlLCucMPaeWjFAMwXe9BDrFZbF7)d)RpC)u72Vc1f9lxJyFuzIZno1YsOtdG4mmpfi3jwHuKkbLYo5yi0wtZbs7MCiLsST5AW)6N1ecUOGwdo2eOHWjG2ATZUONClYMrwXPucCRc5xV2A1r3c78bMwqdn62Jn3qDyIymd5AtM9PrhRrF3rWQCoR9CnVgjY1s)xSU16XDa3S92GWnpoUJ0kbD96NQ2EgNliqKzY3kiYtdgEw)jdVQKV6AQxXdT3SNbJR)(5cc87F2hPCni5y2pyUtB0I3DfMtZDYYHvFE)3VwaDxOLMbvbNOQUVpxWH)eWkyKwc8uD2MZTFz36QT9ZXuE)Q2vFz19R2U6R2S6XMLnVPN2usXwdYZfmBd1o(ir70xinsMC3WZPeDgEjLNiK1fK3(LuYhtMToeZupghzQOeAQ3cBLrR)LwugqtZ04LeQY(pJbgSTUxR3opwiyeX58x7Zeys)inMzMoEuyEjtt98n3OIFu1bEHXmSszT8v0FgSgTurpBV93FVN2A2hE5)8d
+!WA:2!DjvVUrnqq4afePniKIfefHO40ricAIGJKiAJdXIt6q5KTbr3DR9o2EKS31A)5cHsxbT5r4QP6AONNGvriEa4ripbS7DxOGQ9BN1Z89Z47ef0eWcyFD75yUGNimYC4jBCn1OReYZB1OGRiZLqPdKEzle6)mjnF5dhhR0uPMKvGCuvrcDhAsNwILLGu9G9LRH)ou76ngMbCTu1c11dzpEWRp8n)rzYwwnXuuGFEXKtpjjDss6jXPDmJK6PP)RoYE)2hM4BR3PuLUxIjphagWcnocZARPxcYfgfmz9SN2TgOiXCAdOi)JOXsWruCY4ZgnQZ3IFetBFKhwHm4CEkvwc63cuD105miZPmVZLV7SrJJ(WORm81UI0UTpiMbPRU)Ebd((g3GCni506p6IaN8)Xvuo2S0jhBVx013ARj(irQaxEYu2Tc5co8tGQGeTe4L6Qn7838uB3lSHI8iBF7tTBz3Z(SnT77o28)R0hzT7oSPrut1qpn2aYEppsiDox(I4lqMUIUa5fc5kbrgyq2nfZUTf3gHsZCkQaljZ9kdx9hqwfGLvA6cgQ8X9q3B7E3GV1Lle1mXf8PH1cklkttRDH8oXnMAnscDRH8DShsIZRPkLhfQWVaEqGk7Odgm4Gxgm7xF6V)
 ```
 
 ### Variant: one timer per mob, on its nameplate

@@ -15,5 +15,6 @@ ignore:
   - TakenDamage_Forever.txt
   - TUTORIAL.md
   - TESTS-EN-JEU.md
+  - FEATURES-A-VENIR.md
   - GUIDE.md
   - "*.zip"

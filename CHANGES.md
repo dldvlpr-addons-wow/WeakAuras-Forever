@@ -10,6 +10,22 @@ the talent picker widget, see 2026-09-30.
 
 This file lists every file changed from the upstream 5.22.0 release, as required by GPL-2.0 section 2a.
 
+## 2026-10-02
+
+### Added
+- `WeakAuras/Prototypes.lua`: "Hide when target dies" option of the Spell Cast Succeeded trigger. When it is
+  checked, the trigger also listens to `PLAYER_TARGET_DIED`. `WeakAuras/GenericTrigger.lua`: on that event, every
+  state of the trigger is removed, so the timer hides before its duration ends. The event has no payload: it only
+  tells the death of the current target. `WeakAuras/Locales/enUS.lua`: the two new strings. Not tested in game yet.
+
+### Changed
+- `TUTORIAL.md`, `WeakAuras/ForeverTutorial.lua`: section 5 (DoT or buff timer from your cast) uses the Spell Cast
+  Succeeded trigger with "Hide when target dies" instead of custom code. The "hide the timer when your target
+  dies" variant is merged into the recipe, and the ready-made Immolate aura is exported again with this trigger.
+- `.github/workflows/release.yml`: a pushed tag is also uploaded to CurseForge (project 1713094) by a step of the
+  workflow, with the game version read from `## Interface` and the first section of `WeakAuras/CHANGELOG.md` as
+  changelog. The workflow stops before packaging when that section is not for the pushed tag.
+
 ## 2026-09-30
 
 ### Changed
