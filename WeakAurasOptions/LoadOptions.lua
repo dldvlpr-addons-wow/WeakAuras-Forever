@@ -327,7 +327,7 @@ function OptionsPrivate.ConstructOptions(prototype, data, startorder, triggernum
         options["description_"..name] = {
           type = "description",
           width = WeakAuras.doubleWidth,
-          name = arg.text,
+          name = type(arg.text) == "function" and function() return arg.text(trigger) end or arg.text,
           order = order,
           hidden = hidden,
         }

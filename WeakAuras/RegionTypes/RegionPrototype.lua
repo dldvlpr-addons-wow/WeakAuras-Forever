@@ -348,7 +348,7 @@ local function SetOffsetAnim(self, xOffset, yOffset)
 end
 
 local function SetRegionAlpha(self, alpha)
-  if (self.alpha == alpha) then
+  if not Private.IsSecret(self.alpha, alpha) and (self.alpha == alpha) then
     return;
   end
 
@@ -399,6 +399,7 @@ local function GetMinMaxProgress(self)
 end
 
 local function UpdateProgressFromState(self, minMaxConfig, state, progressSource)
+  self.cdmProgressState = state
   local progressType = progressSource[2]
   local property = progressSource[3]
   local totalProperty = progressSource[4]
@@ -407,6 +408,11 @@ local function UpdateProgressFromState(self, minMaxConfig, state, progressSource
   local pausedProperty = progressSource[7]
   local remainingProperty = progressSource[8]
   local useAdditionalProgress = progressSource[9]
+
+  if state and progressType == "timer" and property == "expirationTime"
+     and state.progressType == "durationObject" and Private.IsDurationObject(state.durationObject) then
+    progressType = "durationObject"
+  end
 
   self.durationObject = nil
   self.secretValue, self.secretTotal, self.secretPercent = nil, nil, nil
@@ -425,16 +431,52 @@ local function UpdateProgressFromState(self, minMaxConfig, state, progressSource
     if self.SetAdditionalProgress then
       self:SetAdditionalProgress(nil)
     end
+  elseif progressType == "durationObject" then
+    local adjustMin, max
+    if minMaxConfig.adjustedMin then
+      adjustMin = minMaxConfig.adjustedMin
+    elseif minMaxConfig.adjustedMinRelPercent then
+      adjustMin = minMaxConfig.adjustedMinRelPercent
+    else
+      adjustMin = 0
+    end
+    if minMaxConfig.adjustedMax then
+      max = minMaxConfig.adjustedMax
+    elseif minMaxConfig.adjustedMaxRelPercent then
+      max = minMaxConfig.adjustedMaxRelPercent
+    else
+      max = 1
+    end
+    self.minProgress, self.maxProgress = adjustMin, max
+    self.progressType = "timed"
+    self.duration = 0
+    self.expirationTime = math.huge
+    self.remaining = nil
+    self.modRate = nil
+    self.inverse = inverseProperty and state[inverseProperty]
+    self.paused = false
+    self.durationObject = state.durationObject
+    if self.UpdateTime then
+      self:UpdateTime()
+    end
+    if self.SetAdditionalProgress then
+      if useAdditionalProgress then
+        self:SetAdditionalProgress(state.additionalProgress, 0, 1, false)
+      else
+        self:SetAdditionalProgress(nil)
+      end
+    end
   elseif progressType == "number" then
     local value = state[property]
     if type(value) ~= "number" then value = 0 end
     local total = totalProperty and state[totalProperty]
     if type(total) ~= "number" then total = 0 end
+    local secret = Private.IsSecret(value, total)
     -- We don't care about inverse, modRate or paused
     local adjustMin
     if minMaxConfig.adjustedMin then
       adjustMin = minMaxConfig.adjustedMin
-    elseif minMaxConfig.adjustedMinRelPercent then
+    elseif minMaxConfig.adjustedMinRelPercent and not secret then
       adjustMin = minMaxConfig.adjustedMinRelPercent * total
     else
       adjustMin = 0
@@ -442,7 +484,7 @@ local function UpdateProgressFromState(self, minMaxConfig, state, progressSource
     local max
     if minMaxConfig.adjustedMax then
       max = minMaxConfig.adjustedMax
-    elseif minMaxConfig.adjustedMaxRelPercent then
+    elseif minMaxConfig.adjustedMaxRelPercent and not secret then
       max = minMaxConfig.adjustedMaxRelPercent * total
     else
       max = total
@@ -452,8 +494,19 @@ local function UpdateProgressFromState(self, minMaxConfig, state, progressSource
     -- the animation code/sub elements needs those values in some convenient place
     self.minProgress, self.maxProgress = adjustMin, max
     self.progressType = "static"
-    self.value = value - adjustMin
-    self.total = max - adjustMin
+    if secret then
+      self.value, self.total = 0, 0
+      if Private.IsSecret(max) then
+        self.maxProgress = 0
+      end
+      if not (minMaxConfig.adjustedMin or minMaxConfig.adjustedMinRelPercent
+              or minMaxConfig.adjustedMax or minMaxConfig.adjustedMaxRelPercent) then
+        self.secretValue, self.secretTotal = value, total
+      end
+    else
+      self.value = value - adjustMin
+      self.total = max - adjustMin
+    end
     -- A secret progress (see ScrubSecretState) can be drawn natively, without adjusted min/max values
     -- type() is the only test allowed on a secret
     if property == "value" and totalProperty == "total"
@@ -471,7 +524,7 @@ local function UpdateProgressFromState(self, minMaxConfig, state, progressSource
     end
     if self.SetAdditionalProgress then
       if useAdditionalProgress then
-        self:SetAdditionalProgress(state.additionalProgress, adjustMin, max, false)
+        self:SetAdditionalProgress(state.additionalProgress, adjustMin, self.maxProgress, false)
       else
         self:SetAdditionalProgress(nil)
       end
@@ -483,16 +536,19 @@ local function UpdateProgressFromState(self, minMaxConfig, state, progressSource
     local remaining
     if paused then
       remaining = remainingProperty and state[remainingProperty]
+      if Private.IsSecret(remaining) then
+        remaining = nil
+      end
       expirationTime = GetTime() + (type(remaining) == "number" and remaining or 0)
     else
       expirationTime = state[property]
-      if type(expirationTime) ~= "number" then
+      if type(expirationTime) ~= "number" or Private.IsSecret(expirationTime) then
         expirationTime = math.huge
       end
     end
 
     local duration = totalProperty and state[totalProperty] or 0
-    if type(duration) ~= "number" then
+    if type(duration) ~= "number" or Private.IsSecret(duration) then
       duration = 0
     end
     local modRate = modRateProperty and state[modRateProperty] or nil
@@ -585,11 +641,15 @@ end
 
 local autoTimedProgressSource = {-1, "timer", "expirationTime", "duration", "modRate", "inverse", "paused", "remaining", true}
 local autoStaticProgressSource = {-1, "number", "value", "total", nil, nil, nil, nil, true}
+local autoDurationObjectProgressSource = {-1, "durationObject", nil, nil, nil, "inverse", nil, nil, true}
 local function UpdateProgressFromAuto(self, minMaxConfig, state)
+  self.cdmProgressState = state
   if state.progressType == "timed"  then
     UpdateProgressFromState(self, minMaxConfig, state, autoTimedProgressSource)
   elseif state.progressType == "static"then
     UpdateProgressFromState(self, minMaxConfig, state, autoStaticProgressSource)
+  elseif state.progressType == "durationObject" and Private.IsDurationObject(state.durationObject) then
+    UpdateProgressFromState(self, minMaxConfig, state, autoDurationObjectProgressSource)
   else
     self.durationObject = nil
     self.secretValue, self.secretTotal, self.secretPercent = nil, nil, nil
@@ -611,6 +671,7 @@ local function UpdateProgressFromAuto(self, minMaxConfig, state)
 end
 
 local function UpdateProgressFromManual(self, minMaxConfig, state, value, total)
+  self.cdmProgressState = nil
   value = type(value) == "number" and value or 0
   total = type(total) == "number" and total or 100
   local adjustMin
@@ -661,6 +722,7 @@ end
 
 -- For regions
 local function UpdateProgress(self)
+  if (self.regionType == "icon" or self.regionType == "aurabar" or self.regionType == "progresstexture") and Private.CDMAuraProgress then Private.CDMAuraProgress.Update(self) end
   UpdateProgressFrom(self, self.progressSource, self, self.state, self.states)
   self.subRegionEvents:Notify("UpdateProgress", self.state, self.states)
 end
@@ -903,6 +965,7 @@ function Private.regionPrototype.modifyFinish(parent, region, data)
       if Private.subRegionTypes[subRegionData.type] then
         local subRegion = Private.subRegionTypes[subRegionData.type].acquire()
         subRegion.type = subRegionData.type
+        subRegion.secretAuraDetached = Private.BlizzardAuraDisplay.IsDetachedElement(data, subRegionData)
 
         if subRegion then
           Private.subRegionTypes[subRegionData.type].modify(region, subRegion, data, subRegionData, not subRegionTypes[subRegionData.type])
@@ -1201,6 +1264,13 @@ function Private.regionPrototype.AddExpandFunction(data, region, cloneId, parent
 end
 
 function Private.SetTextureOrAtlas(texture, path, wrapModeH, wrapModeV)
+  if Private.IsSecret(path) then
+    if type(path) == "number" then
+      return texture:SetTexture(path, wrapModeH, wrapModeV)
+    end
+    texture:SetTexture("")
+    return false
+  end
   if type(path) == "string" and WeakAuras.BuildInfo and WeakAuras.BuildInfo >= 16000 and WeakAuras.BuildInfo < 20000 then
     path = path:gsub("%.[Tt][Gg][Aa]$", ""):gsub("%.[Bb][Ll][Pp]$", "")
   end

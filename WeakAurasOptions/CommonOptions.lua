@@ -1274,6 +1274,16 @@ local function ProgressOptions(data)
     hidden = function() return not (data.useAdjustededMin and not data.useAdjustededMax) end,
   }
 
+  for _, key in ipairs({"useAdjustededMin", "adjustedMin", "useAdjustedMinSpacer", "useAdjustededMax", "adjustedMax", "useAdjustedMaxSpacer"}) do
+    local previousHidden = options[key] and options[key].hidden
+    if options[key] then
+      options[key].hidden = function()
+        return OptionsPrivate.Private.CDMAuraProgress.IsConfigured(data)
+          or (previousHidden and previousHidden()) or false
+      end
+    end
+  end
+
   return options
 end
 
@@ -1287,7 +1297,8 @@ local function PositionOptions(id, data, _, hideWidthHeight, disableSelfPoint, g
   end
 
   local function IsGroupByFrame()
-    return data.regionType == "dynamicgroup" and data.useAnchorPerUnit
+    return (data.regionType == "dynamicgroup" and data.useAnchorPerUnit)
+      or (data.regionType == "group" and data.blizzardFlow and data.blizzardFlowFrames ~= nil)
   end
 
   local screenWidth, screenHeight = math.ceil(GetScreenWidth() / 20) * 20, math.ceil(GetScreenHeight() / 20) * 20;
@@ -2171,16 +2182,28 @@ local function AddCommonTriggerOptions(options, data, triggernum, doubleWidth)
       return trigger.type
     end,
     set = function(info, v)
+      local wasSecret = trigger.type == "secretAura"
+      if (trigger.type == "aura2" or trigger.type == "secretAura") and (v == "aura2" or v == "secretAura") then
+        trigger.auraTracking = v == "secretAura" and "native" or "readable"
+        OptionsPrivate.AuraEditor.Resolve(data, triggernum)
+      end
       trigger.type = v;
+      trigger.auraTracking = v == "secretAura" and "native" or v == "aura2" and "readable" or nil
+      if data.blizzardAuraDisplay then data.blizzardAuraDisplay.enabled = nil end
+      if v == "secretAura" then OptionsPrivate.Private.BlizzardAuraDisplay.Migrate(data) end
       local prototype = trigger.event and OptionsPrivate.Private.event_prototypes[trigger.event];
       if OptionsPrivate.Private.event_categories[v] and OptionsPrivate.Private.event_categories[v].default then
         if not prototype or prototype.type ~= v then
           trigger.event = OptionsPrivate.Private.event_categories[v].default
         end
       end
-      WeakAuras.Add(data);
+      OptionsPrivate.SaveAuraTrigger(data, triggernum);
       WeakAuras.UpdateThumbnail(data);
-      WeakAuras.ClearAndUpdateOptions(data.id);
+      if wasSecret or v == "secretAura" then
+        OptionsPrivate.QueueOptionsRefresh(data.id)
+      else
+        WeakAuras.ClearAndUpdateOptions(data.id);
+      end
     end,
   }
 end

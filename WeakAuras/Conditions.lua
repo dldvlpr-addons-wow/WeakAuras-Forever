@@ -221,7 +221,12 @@ function Private.ExecEnv.CallCustomConditionTest(uid, testFunctionNumber, ...)
   end
 end
 
+function Private.ExecEnv.SetSecretAuraConditionProperty(region, property, ...)
+  Private.BlizzardAuraDisplay.SetConditionProperty(region, property, ...)
+end
+
 local function CreateTestForCondition(data, input, allConditionsTemplate, usedStates)
+  if Private.BlizzardAuraDisplay.ContainsNativeCondition(data, input) then return "false" end
   local uid = data.uid
   local trigger = input and input.trigger;
   local variable = input and input.variable;
@@ -631,7 +636,7 @@ function Private.GetSubRegionProperties(data, properties)
       if subProperties then
         for key, property in pairs(subProperties) do
           subIndex[key] = subIndex[key] and subIndex[key] + 1 or 1
-          property.display = { subRegionTypeData.displayName .. " " .. subIndex[key],
+          property.display = { (Private.BlizzardAuraDisplay.IsDetachedElement(data, subRegion) and "Detached " or "") .. subRegionTypeData.displayName .. " " .. subIndex[key],
                                property.display,
                                property.defaultProperty }
           properties["sub." .. index .. "." .. key ] = property;
@@ -653,7 +658,7 @@ function Private.GetProperties(data)
   end
 
   Private.GetSubRegionProperties(data, properties)
-  return properties;
+  return Private.BlizzardAuraDisplay.FilterConditionProperties(data, properties);
 end
 
 function Private.LoadConditionPropertyFunctions(data)
@@ -740,8 +745,8 @@ local globalConditions =
   }
 }
 
-function Private.GetGlobalConditions()
-  return globalConditions;
+function Private.GetGlobalConditions(data)
+  return Private.BlizzardAuraDisplay.FilterGlobalConditions(data, globalConditions);
 end
 
 local function ConstructConditionFunction(data)
@@ -750,10 +755,12 @@ local function ConstructConditionFunction(data)
     return nil
   end
 
+  if Private.BlizzardAuraDisplay.Enabled(data) and Private.BlizzardAuraDisplay.ValidateConditions(data) then return nil end
+
   local usedProperties = {}
 
   local allConditionsTemplate = Private.GetTriggerConditions(data)
-  allConditionsTemplate[-1] = Private.GetGlobalConditions()
+  allConditionsTemplate[-1] = Private.GetGlobalConditions(data)
 
   local ret = {""}
   table.insert(ret, "local newActiveConditions = {};\n")
@@ -829,7 +836,11 @@ local function ConstructConditionFunction(data)
       base = "region.subRegions[" .. subIndex .. "]:"
     end
 
-    table.insert(ret, "    " .. base .. properties[property].setter .. "(" .. arg1 .. formatValueForCall(properties[property].type, property)  .. ")\n")
+    if Private.BlizzardAuraDisplay.Enabled(data) and Private.BlizzardAuraDisplay.IsNativeConditionProperty(data, property) then
+      table.insert(ret, "    Private.ExecEnv.SetSecretAuraConditionProperty(region, " .. string.format("%q", property) .. ", " .. formatValueForCall(properties[property].type, property) .. ")\n")
+    else
+      table.insert(ret, "    " .. base .. properties[property].setter .. "(" .. arg1 .. formatValueForCall(properties[property].type, property)  .. ")\n")
+    end
     if (debug) then table.insert(ret, "    print('Calling "  .. properties[property].setter ..  " with', " .. arg1 ..  formatValueForCall(properties[property].type, property) .. ")\n") end
     table.insert(ret, "  end\n")
   end
@@ -999,7 +1010,7 @@ function Private.RegisterForGlobalConditions(uid)
   local register = {};
   if (data.conditions) then
     local allConditionsTemplate = Private.GetTriggerConditions(data);
-    allConditionsTemplate[-1] = Private.GetGlobalConditions();
+    allConditionsTemplate[-1] = Private.GetGlobalConditions(data);
 
     for conditionNumber, condition in ipairs(data.conditions) do
       EvaluateCheckForRegisterForGlobalConditions(uid, condition.check, allConditionsTemplate, register);

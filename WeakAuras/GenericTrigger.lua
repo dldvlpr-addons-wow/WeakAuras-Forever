@@ -658,6 +658,8 @@ end
 
 local function RunTriggerFunc(allStates, data, id, triggernum, event, arg1, arg2, ...)
   local optionsEvent = event == "OPTIONS";
+  if not optionsEvent and data.prototype and data.prototype.cooldownViewerProgress
+      and WeakAuras.IsOptionsOpen() then return false end
   local errorHandler = (optionsEvent and data.ignoreOptionsEventErrors) and ignoreErrorHandler or Private.GetErrorHandlerId(id, L["Trigger %s"]:format(triggernum))
   local updateTriggerState = false;
 
@@ -945,6 +947,8 @@ end
 ---@param unit UnitToken
 ---@param ... any
 function Private.ScanUnitEvents(event, unit, ...)
+  local previousCDMBatch = Private.cdmScanBatch
+  Private.cdmScanBatch = {}
   Private.StartProfileSystem("generictrigger " .. event .. " " .. unit)
   local unit_list = loaded_unit_events[unit]
   local inRaid = IsInRaid()
@@ -982,6 +986,7 @@ function Private.ScanUnitEvents(event, unit, ...)
     end
   end
   Private.StopProfileSystem("generictrigger " .. event .. " " .. unit)
+  Private.cdmScanBatch = previousCDMBatch
 end
 
 function WeakAuras.ScanUnitEvents(event, unit, ...)
@@ -991,6 +996,7 @@ end
 -- Conditions trigger, Secret Restrictions Active
 Private.callbacks:RegisterCallback("RestrictionChanged", function()
   Private.ScanEvents("WA_RESTRICTION_CHANGED")
+  Private.ScanEvents("WA_SECRET_STATE_UPDATE")
 end)
 
 -- Health and power triggers kept their last readable values during the restriction: read them again when it ends,
@@ -1031,6 +1037,8 @@ end
 ---@param arg2? any
 ---@param ... any
 function Private.ScanEventsInternal(event_list, event, arg1, arg2, ... )
+  local previousCDMBatch = Private.cdmScanBatch
+  Private.cdmScanBatch = {}
   for id, triggers in pairs(event_list) do
     Private.StartProfileAura(id);
     Private.ActivateAuraEnvironment(id);
@@ -1061,6 +1069,7 @@ function Private.ScanEventsInternal(event_list, event, arg1, arg2, ... )
     Private.StopProfileAura(id);
     Private.ActivateAuraEnvironment(nil);
   end
+  Private.cdmScanBatch = previousCDMBatch
 end
 
 function WeakAuras.ScanEventsInternal(event_list, event, arg1, arg2, ... )
@@ -1171,6 +1180,7 @@ end
 ---@type fun(data: auraData, triggernum: integer, state: state, eventData: table)
 local function AddFakeInformation(data, triggernum, state, eventData)
   state.autoHide = false
+  if eventData.prototype and eventData.prototype.cooldownViewerProgress then return end
   if ProgressType(data, triggernum) == "timed" and state.expirationTime == nil then
     state.progressType = "timed"
   end
@@ -1531,6 +1541,8 @@ end
 local eventsToRegister = {};
 local unitEventsToRegister = {};
 function GenericTrigger.LoadDisplays(toLoad, loadEvent, ...)
+  local previousCDMBatch = Private.cdmScanBatch
+  Private.cdmScanBatch = {}
   for id in pairs(toLoad) do
     local register_for_frame_updates = false;
     if(events[id]) then
@@ -1611,6 +1623,7 @@ function GenericTrigger.LoadDisplays(toLoad, loadEvent, ...)
 
   wipe(eventsToRegister);
   wipe(unitEventsToRegister);
+  Private.cdmScanBatch = previousCDMBatch
 end
 
 function GenericTrigger.FinishLoadUnload()
@@ -2103,10 +2116,8 @@ do
   local lastSwingMain, lastSwingOff, lastSwingRange;
   local swingDurationMain, swingDurationOff, swingDurationRange, mainSwingOffset, offSwingOffset;
   local mainTimer, offTimer, rangeTimer;
-  local selfGUID;
   local mainSpeed, offSpeed = UnitAttackSpeed("player")
   local casting = false
-  local skipNextAttack, skipNextAttackCount
   local isAttacking
   -- Weapon speeds are secret while unit stats are restricted: the last readable ones are used instead
   local readableSpeed = {}
@@ -2247,45 +2258,6 @@ do
     end
   end
 
-  local function swingTimerCLEUCheck(ts, event, _, sourceGUID, _, _, _, destGUID, _, _, _, ...)
-    Private.StartProfileSystem("generictrigger swing");
-    if(sourceGUID == selfGUID) then
-      if event == "SPELL_EXTRA_ATTACKS" then
-        skipNextAttack = ts
-        skipNextAttackCount = select(4, ...)
-      elseif(event == "SWING_DAMAGE" or event == "SWING_MISSED") then
-        if tonumber(skipNextAttack) and (ts - skipNextAttack) < 0.04 and tonumber(skipNextAttackCount) then
-          if skipNextAttackCount > 0 then
-            skipNextAttackCount = skipNextAttackCount - 1
-            return
-          end
-        end
-        local isOffHand = select(event == "SWING_DAMAGE" and 10 or 2, ...);
-        if not isOffHand then
-          swingStart("main")
-        elseif(isOffHand) then
-          swingStart("off")
-        end
-        swingTriggerUpdate()
-      end
-    elseif (destGUID == selfGUID and (... == "PARRY" or select(4, ...) == "PARRY")) then
-      if (lastSwingMain) then
-        local timeLeft = lastSwingMain + swingDurationMain - GetTime() - (mainSwingOffset or 0);
-        if (timeLeft > 0.2 * swingDurationMain) then
-          local offset = 0.4 * swingDurationMain
-          if (timeLeft - offset < 0.2 * swingDurationMain) then
-            offset = timeLeft - 0.2 * swingDurationMain
-          end
-          timer:CancelTimer(mainTimer);
-          mainTimer = timer:ScheduleTimerFixed(swingEnd, timeLeft - offset, "main");
-          mainSwingOffset = (mainSwingOffset or 0) + offset
-          swingTriggerUpdate()
-        end
-      end
-    end
-    Private.StopProfileSystem("generictrigger swing");
-  end
-
   local function swingTimerCheck(event, unit, guid, spell)
     if event ~= "PLAYER_EQUIPMENT_CHANGED" and unit and unit ~= "player" then return end
     Private.StartProfileSystem("generictrigger swing");
@@ -2383,9 +2355,6 @@ do
   function WeakAuras.InitSwingTimer()
     if not(swingTimerFrame) then
       swingTimerFrame = CreateFrame("Frame");
-      if Private.hasCombatLog then
-        swingTimerFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED");
-      end
       swingTimerFrame:RegisterEvent("PLAYER_ENTER_COMBAT");
       swingTimerFrame:RegisterEvent("PLAYER_LEAVE_COMBAT");
       swingTimerFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED");
@@ -2399,15 +2368,14 @@ do
       if Private.hasNativeSwingTimer then
         pcall(swingTimerFrame.RegisterEvent, swingTimerFrame, "PLAYER_SWING")
         pcall(swingTimerFrame.RegisterEvent, swingTimerFrame, "PLAYER_SWING_RANGE_UPDATE")
+        swingTimerFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
         for swingType in pairs(handBySwingType) do
           pcall(C_SwingTimer.EnableRangeCheck, swingType, true)
         end
       end
       swingTimerFrame:SetScript("OnEvent",
         function(_, event, ...)
-          if event == "COMBAT_LOG_EVENT_UNFILTERED" then
-            swingTimerCLEUCheck(CombatLogGetCurrentEventInfo())
-          elseif event == "PLAYER_SWING" then
+          if event == "PLAYER_SWING" then
             local swingDuration, swingType = ...
             local hand = not Private.IsSecret(swingType) and handBySwingType[swingType]
             if hand and type(swingDuration) == "number" and not Private.IsSecret(swingDuration) then
@@ -2416,13 +2384,12 @@ do
               swingTriggerUpdate()
               Private.StopProfileSystem("generictrigger swing");
             end
-          elseif event == "PLAYER_SWING_RANGE_UPDATE" then
+          elseif event == "PLAYER_SWING_RANGE_UPDATE" or event == "PLAYER_TARGET_CHANGED" then
             swingTriggerUpdate()
           else
             swingTimerCheck(event, ...)
           end
         end);
-      selfGUID = UnitGUID("player");
     end
   end
 end
@@ -2459,6 +2426,79 @@ do
 
   local shootStart
   local shootDuration
+
+  local SHOOT_SPELL_ID = 5019
+  local WAND_HOLD_WINDOW = 3
+  local SECRET_POLL_INTERVAL = 0.1
+  local SECRET_MIN_COOLDOWN = 1.6
+  local SECRET_UNKNOWN_DURATION = 3600
+  local gcdFlags, gcdFlagSince = {}, {}
+  local wandShotAt, wandLastShotUpdate = -math.huge, -math.huge
+  local castAfterShot, lastCast = {}, {}
+
+  local function UpdateSpellCooldownGCD(spellID)
+    local info = C_Spell.GetSpellCooldown(spellID)
+    local wasOnGCD = gcdFlags[spellID] == true
+    gcdFlags[spellID] = nil
+    if info and not Private.IsSecret(info.isOnGCD) and type(info.isOnGCD) == "boolean" then
+      gcdFlags[spellID] = info.isOnGCD
+    end
+    if gcdFlags[spellID] ~= true then
+      gcdFlagSince[spellID] = nil
+    elseif not wasOnGCD then
+      gcdFlagSince[spellID] = GetTime()
+    end
+  end
+
+  local function ClearWandHold()
+    wipe(castAfterShot)
+    wandShotAt, wandLastShotUpdate = -math.huge, -math.huge
+  end
+
+  local function NoteWandShot()
+    local now = GetTime()
+    if now - wandLastShotUpdate > 0.05 then
+      wandShotAt = now
+      wipe(castAfterShot)
+    end
+    wandLastShotUpdate = now
+  end
+
+  local function NotePlayerCast(spellID)
+    if Private.IsSecret(spellID) or type(spellID) ~= "number" then
+      ClearWandHold()
+    elseif spellID == SHOOT_SPELL_ID then
+      NoteWandShot()
+    else
+      lastCast[spellID] = GetTime()
+      castAfterShot[spellID] = true
+    end
+  end
+
+  local function IsWandHeldSpell(spellID)
+    return spellID ~= SHOOT_SPELL_ID and GetTime() - wandShotAt < WAND_HOLD_WINDOW and not castAfterShot[spellID]
+  end
+
+  local function GetSecretSpellReady(spellID)
+    local info = C_Spell.GetSpellCooldown(spellID)
+    if not info or Private.IsSecret(info.isActive) or type(info.isActive) ~= "boolean" then
+      return nil, false
+    end
+    if not Private.IsSecret(info.isEnabled) and info.isEnabled == false then
+      return false, info.isActive
+    end
+    if not info.isActive then
+      return true, false
+    end
+    local ok, cooldown = pcall(C_Spell.GetSpellCooldownDuration, spellID, true)
+    if ok and Private.IsDurationObject(cooldown) then
+      local okZero, zero = pcall(cooldown.IsZero, cooldown)
+      if okZero and type(zero) == "boolean" and not Private.IsSecret(zero) then
+        return zero, true
+      end
+    end
+    return gcdFlags[spellID], true
+  end
 
   local function GetRuneDuration()
     local runeDuration = -100;
@@ -2804,6 +2844,7 @@ do
             = WeakAuras.GetSpellCooldownUnified(effectiveSpellId, GetRuneDuration());
       if charges == false then
         spellDetail.secret = true
+        self:UpdateSecretReady(effectiveSpellId)
         return
       end
 
@@ -2930,10 +2971,14 @@ do
         startTimeCharges, durationCharges, modRateCharges = KnownCooldown(self.spellCdsCharges, effectiveSpellId)
         unifiedCooldownBecauseRune, cooldownBecauseRune, paused = true, true, false
         spellDetail.secret = true
-        secretChanged = true
+        secretChanged = self:UpdateSecretReady(effectiveSpellId) or not self.quietSecretCheck
       elseif spellDetail.secret then
         spellDetail.secret = nil
+        self:ClearSecretReady(effectiveSpellId)
         secretChanged = true
+      end
+      if not spellDetail.secret and (duration == 0 or startTime == 0) then
+        spellDetail.lastReadyAt = time
       end
 
       local chargesChanged = spellDetail.charges ~= charges or spellDetail.count ~= spellCount
@@ -2966,7 +3011,7 @@ do
       changed = chargeChanged or changed
 
       if not WeakAuras.IsPaused() then
-        if nowReady then
+        if nowReady and not spellDetail.secret then
           self:SendEventsForSpell(effectiveSpellId, "SPELL_COOLDOWN_READY", effectiveSpellId)
         end
 
@@ -3075,6 +3120,15 @@ do
         startTime, duration, paused, readyTime, modRate = self.spellCds:FetchSpellCooldown(effectiveSpellId)
       end
 
+      local spellDetail = self.data[effectiveSpellId]
+      if spellDetail and spellDetail.secret and spellDetail.secretReady ~= nil and not paused then
+        if spellDetail.secretReady then
+          startTime, duration = 0, 0
+        elseif startTime + duration <= GetTime() then
+          startTime, duration, modRate = spellDetail.notReadySince or GetTime(), SECRET_UNKNOWN_DURATION, 1.0
+        end
+      end
+
       if paused then
         return startTime, duration, false, readyTime, modRate, true
       end
@@ -3093,6 +3147,78 @@ do
       return startTime, duration, gcdCooldown, readyTime, modRate, false
     end
   }
+
+  local secretPolled = {}
+  local secretPoller = CreateFrame("Frame")
+  secretPoller:Hide()
+  secretPoller.elapsed = 0
+  secretPoller:SetScript("OnUpdate", function(self, elapsed)
+    self.elapsed = self.elapsed + elapsed
+    if self.elapsed < SECRET_POLL_INTERVAL then
+      return
+    end
+    self.elapsed = 0
+    SpellDetails.quietSecretCheck = true
+    for id in pairs(secretPolled) do
+      if SpellDetails.data[id] and SpellDetails.data[id].secret then
+        local info = C_Spell.GetSpellCooldown(id)
+        local active = info and info.isActive
+        if Private.IsSecret(active) or active ~= true or gcdFlags[id] == true then
+          SpellDetails:CheckSpellCooldown(id, GetRuneDuration())
+        end
+      else
+        secretPolled[id] = nil
+      end
+    end
+    SpellDetails.quietSecretCheck = nil
+    if not next(secretPolled) then
+      self:Hide()
+    end
+  end)
+
+  function SpellDetails:UpdateSecretReady(effectiveSpellId)
+    local detail = self.data[effectiveSpellId]
+    local ready, active = GetSecretSpellReady(effectiveSpellId)
+    local now = GetTime()
+    if ready == true and active and gcdFlags[effectiveSpellId] == true and gcdFlagSince[effectiveSpellId]
+       and now - gcdFlagSince[effectiveSpellId] < SECRET_MIN_COOLDOWN
+    then
+      ready = false
+    end
+    local wandOnly = false
+    if detail.notReadyWand then
+      local cast = lastCast[effectiveSpellId]
+      wandOnly = not cast or (detail.lastReadyAt and cast < detail.lastReadyAt - 0.2) or false
+    end
+    if detail.secretReady == false and ready == true and detail.notReadySince and not wandOnly
+       and now - detail.notReadySince > SECRET_MIN_COOLDOWN and not WeakAuras.IsPaused()
+    then
+      self:SendEventsForSpell(effectiveSpellId, "SPELL_COOLDOWN_READY", effectiveSpellId)
+    end
+    if ready == false then
+      if detail.secretReady ~= false or not detail.notReadySince then
+        detail.notReadySince = now
+        detail.notReadyWand = IsWandHeldSpell(effectiveSpellId) or nil
+      end
+      secretPolled[effectiveSpellId] = true
+      secretPoller:Show()
+    else
+      detail.notReadySince, detail.notReadyWand = nil, nil
+      if ready == true then
+        detail.lastReadyAt = now
+      end
+      secretPolled[effectiveSpellId] = nil
+    end
+    local changed = detail.secretReady ~= ready
+    detail.secretReady = ready
+    return changed
+  end
+
+  function SpellDetails:ClearSecretReady(effectiveSpellId)
+    local detail = self.data[effectiveSpellId]
+    detail.secretReady, detail.notReadySince, detail.notReadyWand = nil, nil, nil
+    secretPolled[effectiveSpellId] = nil
+  end
 
   local mark_ACTIONBAR_UPDATE_COOLDOWN, mark_PLAYER_ENTERING_WORLD
 
@@ -3113,6 +3239,7 @@ do
     cdReadyFrame:RegisterEvent("SPELL_UPDATE_USABLE")
     cdReadyFrame:RegisterEvent("SPELL_UPDATE_USES");
     cdReadyFrame:RegisterEvent("UNIT_SPELLCAST_SENT");
+    cdReadyFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
     cdReadyFrame:RegisterEvent("BAG_UPDATE_DELAYED");
     cdReadyFrame:RegisterUnitEvent("UNIT_INVENTORY_CHANGED", "player")
     cdReadyFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED");
@@ -3126,11 +3253,31 @@ do
       cdReadyFrame:RegisterEvent("RUNE_TYPE_UPDATE");
     end
     cdReadyFrame.HandleEvent = function(self, event, ...)
+      if event == "UNIT_SPELLCAST_SUCCEEDED" then
+        NotePlayerCast((select(3, ...)))
+        return
+      elseif event == "SPELL_UPDATE_COOLDOWN" then
+        local arg1, baseSpellID = ...
+        if (not Private.IsSecret(arg1) and arg1 == SHOOT_SPELL_ID)
+           or (not Private.IsSecret(baseSpellID) and baseSpellID == SHOOT_SPELL_ID)
+        then
+          local info = C_Spell.GetSpellCooldown(SHOOT_SPELL_ID)
+          if info and not Private.IsSecret(info.isActive) and info.isActive == true then
+            NoteWandShot()
+          end
+        end
+        for id in pairs(SpellDetails.data) do
+          UpdateSpellCooldownGCD(id)
+        end
+      end
       if (event == "PLAYER_ENTERING_WORLD") then
         cdReadyFrame.inWorld = GetTime()
+        ClearWandHold()
       end
       if (event == "PLAYER_LEAVING_WORLD") then
         cdReadyFrame.inWorld = nil
+        wipe(gcdFlags)
+        wipe(gcdFlagSince)
       end
       if not cdReadyFrame.inWorld then
         return
@@ -3371,7 +3518,12 @@ do
   ---@param identifier string | number
   ---@return number? startTime, number? duration
   function WeakAuras.GetSpellLossOfControlCooldown(identifier)
-    if C_Spell.GetSpellLossOfControlCooldown then
+    if C_Spell.GetSpellLossOfControlCooldownInfo then
+      local info = C_Spell.GetSpellLossOfControlCooldownInfo(identifier)
+      if info then
+        return info.startTime, info.duration
+      end
+    elseif C_Spell.GetSpellLossOfControlCooldown then
       return C_Spell.GetSpellLossOfControlCooldown(identifier)
     elseif GetSpellLossOfControlCooldown then
       return GetSpellLossOfControlCooldown(identifier)
@@ -4413,6 +4565,85 @@ function Private.ExecEnv.CheckTotemSpellId(spellId, triggerSpellId, followoverri
   return false
 end
 
+do
+  local totemSlots = {}
+  local lastTotemCast = {time = -math.huge}
+  local TOTEM_CAST_WINDOW = 0.5
+
+  local function LearnedTotemSpells()
+    if not Private.db then
+      return
+    end
+    Private.db.totemSpells = Private.db.totemSpells or {}
+    return Private.db.totemSpells
+  end
+
+  local function ReadTotemSlot(slot)
+    local haveTotem, name, startTime, duration, icon, modRate, spellId = GetTotemInfo(slot)
+    if Private.IsSecret(haveTotem, name, startTime, duration, icon, modRate, spellId) then
+      return
+    end
+    if haveTotem and startTime and startTime ~= 0 then
+      totemSlots[slot] = {name = name, icon = icon, spellId = spellId}
+      local learned = LearnedTotemSpells()
+      if learned and type(spellId) == "number" and spellId > 0 then
+        learned[spellId] = slot
+      end
+    else
+      totemSlots[slot] = nil
+    end
+    return true
+  end
+
+  local function UpdateSecretTotemSlot(slot)
+    local learned = LearnedTotemSpells()
+    local spellId = lastTotemCast.spellId
+    if spellId and learned and learned[spellId] == slot and GetTime() - lastTotemCast.time <= TOTEM_CAST_WINDOW then
+      totemSlots[slot] = {name = Private.ExecEnv.GetSpellName(spellId), icon = Private.ExecEnv.GetSpellIcon(spellId), spellId = spellId}
+      return true
+    end
+    local changed = totemSlots[slot] ~= nil
+    totemSlots[slot] = nil
+    return changed
+  end
+
+  local totemFrame = CreateFrame("Frame")
+  totemFrame:RegisterEvent("PLAYER_TOTEM_UPDATE")
+  totemFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+  totemFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+  totemFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
+  totemFrame:SetScript("OnEvent", function(_, event, arg1, _, spellId)
+    if event == "UNIT_SPELLCAST_SUCCEEDED" then
+      local public = not Private.IsSecret(spellId) and type(spellId) == "number"
+      lastTotemCast.time, lastTotemCast.spellId = GetTime(), public and spellId or nil
+      local learned = public and LearnedTotemSpells()
+      local slot = learned and learned[spellId]
+      if slot and not ReadTotemSlot(slot) and UpdateSecretTotemSlot(slot) then
+        Private.ScanEvents("WA_TOTEM_UPDATE", slot)
+      end
+    elseif event == "PLAYER_TOTEM_UPDATE" then
+      if type(arg1) == "number" and not Private.IsSecret(arg1) and not ReadTotemSlot(arg1) then
+        UpdateSecretTotemSlot(arg1)
+      end
+      Private.ScanEvents("WA_TOTEM_UPDATE", arg1)
+    else
+      for slot = 1, 5 do
+        ReadTotemSlot(slot)
+      end
+      Private.ScanEvents("WA_TOTEM_UPDATE")
+    end
+  end)
+
+  function Private.ExecEnv.GetTotemSlotInfo(slot)
+    local haveTotem, name, startTime, duration, icon, modRate, spellId = GetTotemInfo(slot)
+    local totem = totemSlots[slot]
+    if totem and Private.IsSecret(name, icon, spellId) then
+      return haveTotem, totem.name, startTime, duration, totem.icon, modRate, totem.spellId
+    end
+    return haveTotem, name, startTime, duration, icon, modRate, spellId
+  end
+end
+
 -- Queueable Spells
 if WeakAuras.IsClassicOrTBCOrWrath() then
   local queueableSpells
@@ -5171,6 +5402,11 @@ function GenericTrigger.GetAdditionalProperties(data, triggernum)
 end
 
 function GenericTrigger.GetProgressSources(data, triggernum, values)
+  local prototype = GenericTrigger.GetPrototype(data.triggers[triggernum].trigger)
+  if prototype and prototype.cooldownViewerProgress then
+    tinsert(values, {trigger = triggernum, property = "expirationTime", type = "timer", display = "Cooldown / aura duration", total = "duration", modRate = "modRate"})
+    return
+  end
   local variables = GenericTrigger.GetTriggerConditions(data, triggernum)
   if (type(variables) == "table") then
     for var, varData in pairs(variables) do
@@ -5330,7 +5566,7 @@ function GenericTrigger.GetTriggerConditions(data, triggernum)
     local result = {};
 
     local progressType, modRated = ProgressType(data, triggernum);
-    if progressType == "timed" then
+    if progressType == "timed" and not prototype.cooldownViewerProgress then
       if modRated then
         result.expirationTime = commonConditions.expirationTimeModRate;
         result.duration = commonConditions.durationModRate;
@@ -5390,6 +5626,9 @@ function GenericTrigger.GetTriggerConditions(data, triggernum)
           end
           if (v.conditionTest) then
             result[v.name].test = v.conditionTest;
+          end
+          if v.conditionRecheckTime then
+            result[v.name].recheckTime = v.conditionRecheckTime
           end
           if (v.conditionEvents) then
             result[v.name].events = v.conditionEvents;
@@ -5679,9 +5918,12 @@ Private.ExecEnv.IsEquippedItemType = function(itemType, itemSlot)
   end
 end
 
----@return integer critChance
+---@return integer? critChance
 WeakAuras.GetCritChance = function()
   -- Based on what the wow paper doll does
+  if Private.IsRestricted("unitStats") then
+    return nil
+  end
   local spellCrit = 0
   for i = 2, MAX_SPELL_SCHOOLS or 7 do -- WORKAROUND: MAX_SPELL_SCHOOLS is nil on classic_era
     spellCrit = max(spellCrit, GetSpellCritChance(i))
@@ -5689,8 +5931,11 @@ WeakAuras.GetCritChance = function()
   return max(spellCrit, GetRangedCritChance(), GetCritChance())
 end
 
----@return number hitChance
+---@return number? hitChance
 WeakAuras.GetHitChance = function()
+  if Private.IsRestricted("unitStats") then
+    return nil
+  end
   local melee = (GetCombatRatingBonus(CR_HIT_MELEE) or 0) + (GetHitModifier() or 0)
   local ranged = (GetCombatRatingBonus(CR_HIT_RANGED) or 0) + (GetHitModifier() or 0)
   local spell = (GetCombatRatingBonus(CR_HIT_SPELL) or 0) + (GetSpellHitModifier() or 0)

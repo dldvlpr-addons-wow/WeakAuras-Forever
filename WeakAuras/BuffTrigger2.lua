@@ -3358,24 +3358,30 @@ local function createScanFunc(trigger)
     table.insert(ret, ret2:format(property, property, trigger.tooltipValue_operator, trigger.tooltipValue))
   end
 
-  if trigger.useNamePattern and trigger.namePattern_operator and trigger.namePattern_name then
-    if trigger.namePattern_operator == "==" then
-      local ret2 = [=[
-      if not matchData.name == %s then
+  if trigger.useNamePattern and trigger.namePattern_name and trigger.namePattern_name ~= "" then
+    table.insert(ret, [=[
+      if type(matchData.name) ~= "string" or (issecretvalue and issecretvalue(matchData.name)) then
         return false
       end
-      ]=]
-      table.insert(ret, ret2:format(Private.QuotedString(trigger.namePattern_name)))
-    elseif trigger.namePattern_operator == "find('%s')" then
+    ]=])
+    local operator = trigger.namePattern_operator or "=="
+    if operator == "find('%s')" then
       local ret2 = [=[
       if not matchData.name:find(%s, 1, true) then
         return false
       end
       ]=]
       table.insert(ret, ret2:format(Private.QuotedString(trigger.namePattern_name)))
-    elseif trigger.namePattern_operator == "match('%s')" then
+    elseif operator == "match('%s')" then
       local ret2 = [=[
       if not matchData.name:match(%s) then
+        return false
+      end
+      ]=]
+      table.insert(ret, ret2:format(Private.QuotedString(trigger.namePattern_name)))
+    else
+      local ret2 = [=[
+      if matchData.name ~= %s then
         return false
       end
       ]=]

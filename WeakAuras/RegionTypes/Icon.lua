@@ -122,6 +122,9 @@ local function GetProperties(data)
   local result = CopyTable(properties)
   result.iconSource.values = Private.IconSources(data)
   result.progressSource.values = Private.GetProgressSourcesForUi(data)
+  if Private.CDMAuraProgress.IsConfigured(data) then
+    result.adjustedMin, result.adjustedMax = nil, nil
+  end
   return result
 end
 
@@ -303,6 +306,12 @@ local function create(parent, data)
   return region;
 end
 
+local cooldownAlphaCurve = C_CurveUtil and C_CurveUtil.CreateCurve()
+if cooldownAlphaCurve then
+  cooldownAlphaCurve:AddPoint(0, 0)
+  cooldownAlphaCurve:AddPoint(0.001, 1)
+end
+
 local function modify(parent, region, data)
   -- Legacy members stacks and text2
   region.stacks = nil
@@ -421,8 +430,13 @@ local function modify(parent, region, data)
     -- If cooldown.inverse == false then effectiveReverse = not inverse
     -- If cooldown.inverse == true then effectiveReverse = inverse
     local effectiveReverse = not region.inverseDirection == not cooldown.inverse
+    local progressState = region.cdmProgressState
+    if progressState and progressState.cooldownID and not progressState.cdmBuff then
+      effectiveReverse = region.inverseDirection == true
+    end
     local reverseChanged = cooldown.durationObject and not cooldown:GetReverse() ~= not effectiveReverse
     cooldown:SetReverse(effectiveReverse)
+    Private.CDMAuraProgress.Style(region)
     if cooldown.durationObject then
       -- Duration objects are applied again on every secret update, only restart the swipe when needed
       if reverseChanged and cooldown:IsShown() then
@@ -442,6 +456,17 @@ local function modify(parent, region, data)
   region:SetInverse(data.inverse)
 
   function region:SetHideCountdownNumbers(cooldownTextDisabled)
+    self.cdmConfiguredHideNumbers = cooldownTextDisabled
+    Private.CDMAuraProgress.Style(self)
+    local state = self.cdmProgressState or self.state
+    cooldownTextDisabled = cooldownTextDisabled or Private.ShouldHideDurationText(state) or false
+    local countdown = cooldown:GetCountdownFontString()
+    local textDuration = state and state.cdmHideGCDText and state.cdmTextDurationObject
+    if textDuration and cooldownAlphaCurve then
+      countdown:SetAlpha(textDuration:EvaluateRemainingDuration(cooldownAlphaCurve))
+    else
+      countdown:SetAlpha(1)
+    end
     if OmniCC and OmniCC.Cooldown and OmniCC.Cooldown.SetNoCooldownCount then
       cooldown:SetHideCountdownNumbers(true)
       OmniCC.Cooldown.SetNoCooldownCount(cooldown, cooldownTextDisabled)
@@ -559,14 +584,23 @@ local function modify(parent, region, data)
 
 
 
+  function region:UpdateCooldownDrawState()
+    local suppressed = self.cdmProgressState and self.cdmProgressState.cdmSuppressGCD or false
+    cooldown:SetDrawSwipeOrg(not suppressed and not not self.cooldownSwipe)
+    cooldown:SetDrawEdge(not suppressed and self.cooldownEdge == true)
+    return suppressed
+  end
+
   function region:SetCooldownSwipe(cooldownSwipe)
     region.cooldownSwipe = cooldownSwipe;
-    cooldown:SetDrawSwipeOrg(cooldownSwipe);
+    self:UpdateCooldownDrawState()
+    Private.CDMAuraProgress.Style(region)
   end
 
   function region:SetCooldownEdge(cooldownEdge)
     region.cooldownEdge = cooldownEdge;
-    cooldown:SetDrawEdge(cooldownEdge);
+    self:UpdateCooldownDrawState()
+    Private.CDMAuraProgress.Style(region)
   end
 
   region:SetCooldownSwipe(data.cooldownSwipe)
@@ -585,10 +619,17 @@ local function modify(parent, region, data)
   cooldown:Hide()
   if(data.cooldown) then
     function region:UpdateValue()
+      if region.cdmNativeProgress then return end
+      if self:UpdateCooldownDrawState() then cooldown:Hide(); return end
+      self:SetHideCountdownNumbers(self.cdmConfiguredHideNumbers)
       cooldown.expirationTime = nil
       cooldown.duration = nil
       cooldown.modRate = nil
       cooldown.durationObject = nil
+      if Private.CDMAuraProgress.IsInactive(self) then
+        cooldown:Hide()
+        return
+      end
       cooldown.value = self.value
       cooldown.total = self.total
       if (self.value >= 0 and self.value <= self.total) then
@@ -601,6 +642,9 @@ local function modify(parent, region, data)
     end
 
     function region:UpdateTime()
+      if region.cdmNativeProgress then return end
+      if self:UpdateCooldownDrawState() then cooldown:Hide(); return end
+      self:SetHideCountdownNumbers(self.cdmConfiguredHideNumbers)
       cooldown.value = nil
       cooldown.total = nil
       if self.paused then
@@ -618,6 +662,7 @@ local function modify(parent, region, data)
         cooldown:Show()
         region:UpdateEffectiveInverse()
         cooldown:SetCooldownFromDurationObject(self.durationObject, true)
+        if self.cdmProgressState and self.cdmProgressState.cdmNativePaused then cooldown:Pause() end
         return
       end
       cooldown.durationObject = nil
@@ -639,6 +684,8 @@ local function modify(parent, region, data)
     end
 
     function region:PreShow()
+      if region.cdmNativeProgress then return end
+      if self:UpdateCooldownDrawState() then cooldown:Hide(); return end
       if cooldown.durationObject then
         cooldown:Show()
         cooldown:SetCooldownFromDurationObject(cooldown.durationObject, true)
@@ -653,6 +700,7 @@ local function modify(parent, region, data)
     end
 
     function region:Update()
+      self:SetHideCountdownNumbers(self.cdmConfiguredHideNumbers)
       region:UpdateProgress()
       region:UpdateIcon()
     end
@@ -661,6 +709,7 @@ local function modify(parent, region, data)
     region.UpdateTime = nil
 
     function region:Update()
+      self:SetHideCountdownNumbers(self.cdmConfiguredHideNumbers)
       region:UpdateProgress()
       region:UpdateIcon()
     end
@@ -675,6 +724,7 @@ local function modify(parent, region, data)
     end
   end
 
+  Private.CDMAuraProgress.Modify(region, data)
   Private.regionPrototype.modifyFinish(parent, region, data);
 
   --- WORKAROUND

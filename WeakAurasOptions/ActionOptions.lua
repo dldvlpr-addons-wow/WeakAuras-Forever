@@ -1214,6 +1214,7 @@ function OptionsPrivate.GetActionOptions(data)
         type = "toggle",
         width = WeakAuras.doubleWidth,
         name = L["Hide Glows applied by this aura"],
+        desc = "Also clears unit-frame glows from Display > Aura (Modern) Settings. Secret glows additionally stop when no aura matches or the display unloads.",
         order = 31,
       },
       finish_do_custom = {
@@ -1358,6 +1359,17 @@ function OptionsPrivate.GetActionOptions(data)
 
   OptionsPrivate.commonOptions.AddCodeOptionTimeMachine(action.args, data, L["Custom Code"], "finish", "https://github.com/WeakAuras/WeakAuras2/wiki/Custom-Code-Blocks#on-hide",
                           32, function() return not data.actions.finish.do_custom end, {"actions", "finish", "custom"}, true);
+
+  for _, when in ipairs({"start", "finish"}) do
+    action.args[when .. "_sound_fojji"] = {
+      type = "input", name = "Recorded phrase", width = "full",
+      order = action.args[when .. "_sound"].order + 0.01,
+      hidden = function() return data.actions[when].sound ~= " Fojji" end,
+      disabled = function() return not data.actions[when].do_sound end,
+      desc = "Exact phrase in your selected FojjiCore recorded voice pack. Live TTS is not supported."
+    }
+  end
+  OptionsPrivate.PrepareSecretActionOptions(data, action)
 
   if data.controlledChildren then
     removeFuncs(action)

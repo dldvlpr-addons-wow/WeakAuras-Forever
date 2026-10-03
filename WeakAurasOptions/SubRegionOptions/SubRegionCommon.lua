@@ -145,24 +145,40 @@ function OptionsPrivate.AddUpDownDeleteDuplicate(options, parentData, index, sub
     for child in OptionsPrivate.Private.TraverseLeafsOrAura(parentData) do
       OptionsPrivate.MoveSubRegionUp(child, index, subRegionType)
     end
-    WeakAuras.ClearAndUpdateOptions(parentData.id)
+    if OptionsPrivate.Private.BlizzardAuraDisplay.HasTrigger(parentData) then
+      OptionsPrivate.QueueOptionsRefresh(parentData.id)
+    else
+      WeakAuras.ClearAndUpdateOptions(parentData.id)
+    end
   end
   options.__down = function()
     for child in OptionsPrivate.Private.TraverseLeafsOrAura(parentData) do
       OptionsPrivate.MoveSubRegionDown(child, index, subRegionType)
     end
-    WeakAuras.ClearAndUpdateOptions(parentData.id)
+    if OptionsPrivate.Private.BlizzardAuraDisplay.HasTrigger(parentData) then
+      OptionsPrivate.QueueOptionsRefresh(parentData.id)
+    else
+      WeakAuras.ClearAndUpdateOptions(parentData.id)
+    end
   end
   options.__duplicate = function()
     for child in OptionsPrivate.Private.TraverseLeafsOrAura(parentData) do
       OptionsPrivate.DuplicateSubRegion(child, index, subRegionType)
     end
-    WeakAuras.ClearAndUpdateOptions(parentData.id)
+    if OptionsPrivate.Private.BlizzardAuraDisplay.HasTrigger(parentData) then
+      OptionsPrivate.QueueOptionsRefresh(parentData.id)
+    else
+      WeakAuras.ClearAndUpdateOptions(parentData.id)
+    end
   end
   options.__delete = function()
     for child in OptionsPrivate.Private.TraverseLeafsOrAura(parentData) do
       OptionsPrivate.DeleteSubRegion(child, index, subRegionType)
     end
-    WeakAuras.ClearAndUpdateOptions(parentData.id)
+    if OptionsPrivate.Private.BlizzardAuraDisplay.HasTrigger(parentData) then
+      OptionsPrivate.QueueOptionsRefresh(parentData.id)
+    else
+      WeakAuras.ClearAndUpdateOptions(parentData.id)
+    end
   end
 end

@@ -83,6 +83,13 @@ Private.regionPrototype.AddProperties(properties, default);
 --- @field SetTextHeight fun(self: TextRegion, size: number)
 --- @field ChangeText fun(self: TextRegion, msg: string)
 
+local function AnchorText(region, point)
+  if region.textAnchorPoint == point then return end
+  region.textAnchorPoint = point
+  region.text:ClearAllPoints()
+  region.text:SetPoint(point, region, point)
+end
+
 local fontObjectCounter = 0
 
 local function create(parent)
@@ -102,6 +109,12 @@ local function create(parent)
 
   Private.regionPrototype.create(region);
 
+  local SetAnchor = region.SetAnchor
+  function region:SetAnchor(point, relativeTo, relativePoint)
+    SetAnchor(self, point, relativeTo, relativePoint)
+    if self.automaticTextWidth then AnchorText(self, point) end
+  end
+
   return region;
 end
 
@@ -120,16 +133,9 @@ local function modify(parent, region, data)
   if text.SetSmoothScaling then
     text:SetSmoothScaling(data.smoothScaling or false) -- doesn't accept nil
   end
-  text:SetFont(fontPath, data.fontSize, outline);
-  if not text:GetFont() and fontPath then -- workaround font not loading correctly
-    fontObject:SetFont(fontPath, data.fontSize, outline)
-    text:SetFontObject(fontObject)
-  end
-  if not text:GetFont() then -- Font invalid, set the font but keep the setting
-    text:SetFont(STANDARD_TEXT_FONT, data.fontSize, outline);
-  end
-
   fontObject:SetJustifyH(data.justify);
+  Private.ApplyTextFont(text, fontObject, fontPath, data.fontSize, outline,
+    data.shadowColor, data.shadowXOffset, data.shadowYOffset)
   text:SetText("")
 
   text:ClearAllPoints();
@@ -137,6 +143,12 @@ local function modify(parent, region, data)
 
   region.width = text:GetWidth();
   region.height = text:GetStringHeight();
+  if Private.IsSecret(region.width) then
+    region.width = 200
+  end
+  if Private.IsSecret(region.height) then
+    region.height = 30
+  end
   region:SetWidth(region.width);
   region:SetHeight(region.height);
 
@@ -157,15 +169,10 @@ local function modify(parent, region, data)
   end
 
   text:SetTextHeight(data.fontSize);
-  fontObject:SetShadowColor(unpack(data.shadowColor))
-  if data.outline == "OUTLINE|SLUG" then
-    fontObject:SetShadowOffset(0, 0)
-  else
-    fontObject:SetShadowOffset(data.shadowXOffset, data.shadowYOffset)
-  end
 
-  text:ClearAllPoints();
-  text:SetPoint(data.justify, region, data.justify);
+  region.automaticTextWidth = data.automaticWidth ~= "Fixed"
+  region.textAnchorPoint = nil
+  AnchorText(region, region.automaticTextWidth and (region.anchorPoint or data.selfPoint) or data.justify)
 
   local SetText;
 
@@ -204,7 +211,7 @@ local function modify(parent, region, data)
     text:SetWordWrap(true);
     text:SetNonSpaceWrap(true);
     SetText = function(textStr)
-      if(textStr ~= text.displayText) then
+      if Private.IsSecret(textStr) or textStr ~= text.displayText then
         if text:GetFont() then
           text:SetText(WeakAuras.ReplaceRaidMarkerSymbols(textStr));
         end

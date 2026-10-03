@@ -251,6 +251,13 @@ local function addControlsForChange(args, order, data, conditionVariable, totalA
   local thenText = (j == 1) and L["Then "] or L["And "];
   local display = isSubset(data, conditions[i].changes[j], totalAuraCount) and allProperties.displayWithCopy or allProperties.display;
   local valuesForProperty = filterUsedProperties(allProperties.indexToProperty, display, usedProperties, conditions[i].changes[j].property);
+  for index in pairs(valuesForProperty) do
+    local property = allProperties.indexToProperty[index]
+    if property and property ~= "DELETE" and property ~= "COPY"
+        and not OptionsPrivate.Private.BlizzardAuraDisplay.NativeConditionAllowsProperty(data, conditions[i].check, property) then
+      valuesForProperty[index] = nil
+    end
+  end
   args["condition" .. i .. "property" .. j] = {
     type = "select",
     width = WeakAuras.normalWidth,
@@ -486,11 +493,10 @@ local function addControlsForChange(args, order, data, conditionVariable, totalA
     end
   end
 
-  local propertyType;
   local property = conditions[i].changes[j].property;
-  if (property) then
-    propertyType = allProperties.propertyMap[property] and allProperties.propertyMap[property].type;
-  end
+  local propertyData = property and allProperties.propertyMap[property] or nil
+  propertyData = OptionsPrivate.Private.BlizzardAuraDisplay.HighlightPropertyOptions(data, conditions[i], property, propertyData)
+  local propertyType = propertyData and propertyData.type or nil
   if (propertyType == "bool" or propertyType == "number") then
     args["condition" .. i .. "value" .. j] = {
       type = "toggle",
@@ -505,8 +511,12 @@ local function addControlsForChange(args, order, data, conditionVariable, totalA
     order = order + 1;
     if (propertyType == "number") then
       args["condition" .. i .. "value" .. j].name = blueIfNoValue(data, conditions[i].changes[j], "value", L["Differences"])
-      local properties = allProperties.propertyMap[property];
-      if (properties.min or properties.softMin) and (properties.max or properties.softMax) then
+      local properties = propertyData;
+      if property == "faAuraHighlightSize" and properties then
+        args["condition" .. i .. "value" .. j].name = properties.display
+        args["condition" .. i .. "value" .. j].desc = properties.description
+      end
+      if (properties and (properties.min or properties.softMin)) and (properties.max or properties.softMax) then
         args["condition" .. i .. "value" .. j].type = "range";
         args["condition" .. i .. "value" .. j].control = "WeakAurasSpinBox"
         args["condition" .. i .. "value" .. j].min = properties.min;
@@ -1762,6 +1772,16 @@ local function addControlsForIfLine(args, order, data, conditionVariable, totalA
     valuesForIf = isSubset(data, conditions[i].check, totalAuraCount) and conditionTemplatesToUse.displayWithCopy or conditionTemplatesToUse.display;
   end
 
+  if indentDepth > 0 then
+    valuesForIf = CopyTable(valuesForIf)
+    for index in pairs(valuesForIf) do
+      if OptionsPrivate.Private.BlizzardAuraDisplay.NativeConditionKind(data, {
+          trigger = conditionTemplatesToUse.indexToTrigger[index], variable = conditionTemplatesToUse.indexToVariable[index]}) then
+        valuesForIf[index] = nil
+      end
+    end
+  end
+
   args["condition" .. i .. tostring(path) .. "if"] = {
     type = "select",
     name = optionsName,
@@ -1862,6 +1882,20 @@ local function addControlsForIfLine(args, order, data, conditionVariable, totalA
         end
         check.variable = variable;
         check.trigger = trigger;
+        if indentDepth == 0 then
+          local display = OptionsPrivate.Private.BlizzardAuraDisplay
+          for _, change in ipairs(conditions[i].changes or {}) do
+            if change.property and not display.NativeConditionAllowsProperty(data, check, change.property) then
+              change.property, change.value = nil, nil
+            end
+          end
+          if display.NativeConditionKind(data, check) then
+            conditions[i].linked = false
+            if conditions[i + 1] then conditions[i + 1].linked = false end
+            if display.IsNativeDurationCondition(check) then check.op = "<"
+            elseif check.variable == "faAuraDispel" or check.variable == "faAuraType" then check.op = "==" end
+          end
+        end
         local newType = conditionTemplatesToUse.all[trigger][variable].type;
         if (newType ~= oldType) then
           check.value = nil;
@@ -1935,7 +1969,9 @@ local function addControlsForIfLine(args, order, data, conditionVariable, totalA
 
     if (currentConditionTemplate.type == "number" or currentConditionTemplate.type == "timer" or currentConditionTemplate.type == "elapsedTimer") then
       local opTypes = OptionsPrivate.Private.operator_types
-      if currentConditionTemplate.operator_types == "without_equal" then
+      if currentConditionTemplate.operator_types == "native_aura_duration" then
+        opTypes = {['<'] = '<', ['>='] = '>='}
+      elseif currentConditionTemplate.operator_types == "without_equal" then
         opTypes = OptionsPrivate.Private.operator_types_without_equal
       elseif currentConditionTemplate.operator_types == "only_equal" then
         opTypes = OptionsPrivate.Private.equality_operator_types
@@ -1976,7 +2012,7 @@ local function addControlsForIfLine(args, order, data, conditionVariable, totalA
           type = "select",
           width = WeakAuras.normalWidth,
           order = order,
-          values = OptionsPrivate.Private.equality_operator_types,
+          values = currentConditionTemplate.operator_types == "native_aura_dispel" and {["=="] = "=", ["~="] = "!="} or OptionsPrivate.Private.equality_operator_types,
           get = function()
             return check.op;
           end,
@@ -2597,6 +2633,8 @@ local function addControlsForCondition(args, order, data, conditionVariable, tot
     end
   end
 
+  if OptionsPrivate.Private.BlizzardAuraDisplay.ContainsNativeCondition(data, conditions[i].check)
+      or (i > 1 and OptionsPrivate.Private.BlizzardAuraDisplay.ContainsNativeCondition(data, conditions[i - 1].check)) then showElseIf = isLinked and true or false end
   if showElseIf then
     args["condition" .. i .. "_else"] = {
       type = "toggle",
@@ -2740,7 +2778,7 @@ local function createConditionTemplates(data)
       type = "combination"
     }
   }
-  allConditionTemplates[-1] = OptionsPrivate.Private.GetGlobalConditions();
+  allConditionTemplates[-1] = OptionsPrivate.Private.GetGlobalConditions(data);
 
   local conditionTemplates = createConditionTemplatesValueList(allConditionTemplates, numTriggers, nil, data);
 
@@ -3092,6 +3130,7 @@ local fixupConditions = function(conditions)
 end
 
 function OptionsPrivate.GetConditionOptions(data)
+  OptionsPrivate.Private.BlizzardAuraDisplay.MigrateNativeConditions(data)
   local  options = {
     type = "group",
     name = L["Conditions"],

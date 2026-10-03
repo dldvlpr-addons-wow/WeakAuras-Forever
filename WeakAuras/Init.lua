@@ -403,22 +403,6 @@ else
   WeakAuras.buildType = "beta"
 end
 
---[=[@alpha@
-WeakAuras.buildType = "alpha"
---@end-alpha@]=]
-
---[=====[@experimental@
-WeakAuras.buildType = "pr"
---@end-experimental@]=====]
-
---[==[@debug@
-if versionStringFromToc == "5.22.0" then
-  versionStringFromToc = "Dev"
-  buildTime = "Dev"
-  WeakAuras.buildType = "dev"
-end
---@end-debug@]==]
-
 WeakAuras.versionString = versionStringFromToc
 WeakAuras.buildTime = buildTime
 WeakAuras.newFeatureString = "|TInterface\\OptionsFrame\\UI-OptionsFrame-NewFeatureIcon:0|t"
@@ -491,6 +475,8 @@ function WeakAuras.IsRestricted()
   end
   return auras or cooldowns or false
 end
+
+WeakAuras.IsSecretStateActive = WeakAuras.IsRestricted
 
 --- Fires Private.callbacks "RestrictionChanged" (isRestricted) when WeakAuras.IsRestricted() changes,
 --- or when only the aura, the cooldown or the unit stats restriction changes.

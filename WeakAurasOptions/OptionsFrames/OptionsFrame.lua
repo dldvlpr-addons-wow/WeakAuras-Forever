@@ -753,6 +753,27 @@ function OptionsPrivate.CreateFrame()
   magnetButton.frame:Show()
   magnetButton:SetPoint("LEFT", lockButton.frame, "RIGHT", 10, 0)
 
+  if C_CooldownViewer then
+    local hideCDM = AceGUI:Create("CheckBox")
+    hideCDM:SetLabel("Hide Blizzard's CDM")
+    hideCDM:SetWidth(190)
+    hideCDM:SetValue(OptionsPrivate.Private.db.cdmHideBlizzard == true)
+    hideCDM:SetCallback("OnValueChanged", function(_, _, value)
+      OptionsPrivate.Private.db.cdmHideBlizzard = value
+      OptionsPrivate.Private.ApplyCDMBackground()
+    end)
+    hideCDM:SetCallback("OnEnter", function(widget)
+      GameTooltip:SetOwner(widget.frame, "ANCHOR_RIGHT")
+      GameTooltip:SetText("Hide Blizzard's CDM")
+      GameTooltip:AddLine("Keeps Blizzard's cooldown manager enabled for tracking while hiding its four viewers. Set each viewer's Visibility to Always in Blizzard's Edit Mode, and turn Show Tooltips off there if needed. Turning this off restores their previous opacity and leaves tracking enabled. Changes apply out of combat.", 1, 1, 1, true)
+      GameTooltip:Show()
+    end)
+    hideCDM:SetCallback("OnLeave", function() GameTooltip:Hide() end)
+    hideCDM.frame:SetParent(toolbarContainer)
+    hideCDM.frame:HookScript("OnShow", function() hideCDM:SetValue(OptionsPrivate.Private.db.cdmHideBlizzard == true) end)
+    hideCDM.frame:SetPoint("LEFT", magnetButton.frame, "RIGHT", 10, 0)
+    hideCDM.frame:Show()
+  end
 
   local loadProgress = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   loadProgress:SetPoint("TOP", buttonsContainer.frame, "TOP", 0, -4)
@@ -1181,6 +1202,7 @@ function OptionsPrivate.CreateFrame()
 
     local optionTable = self:EnsureOptions(data, self.selectedTab)
     if optionTable then
+      OptionsPrivate.UseColorPalette(optionTable)
       AceConfigRegistry:RegisterOptionsTable("WeakAuras", optionTable, true)
     end
   end
@@ -1442,6 +1464,18 @@ function OptionsPrivate.CreateFrame()
 
       return OptionsPrivate.Private.regionOptions[a].displayName < OptionsPrivate.Private.regionOptions[b].displayName
     end)
+
+    if not targetIsDynamicGroup then
+      local flowButton = AceGUI:Create("WeakAurasNewButton")
+      flowButton:SetTitle("Modern Aura Group")
+      frame.modernGroupIcon = frame.modernGroupIcon or OptionsPrivate.CreateModernGroupIcon()
+      flowButton:SetIcon(frame.modernGroupIcon)
+      flowButton:SetDescription("A group whose Aura (Modern) displays grow together, also in combat")
+      flowButton:SetClick(function()
+        WeakAuras.NewAura({blizzardFlow = true, blizzardFlowGrowth = "RIGHT", blizzardFlowSpacing = 2}, "group", self:GetTargetAura())
+      end)
+      containerScroll:AddChild(flowButton)
+    end
 
     for index, regionType in ipairs(regionTypesSorted) do
       if (targetIsDynamicGroup and (regionType == "group" or regionType == "dynamicgroup")) then

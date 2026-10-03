@@ -265,11 +265,12 @@ local function commonParent(controlledChildren)
   end
 end
 
-local function CreateNewGroupFromSelection(regionType, resetChildPositions)
+local function CreateNewGroupFromSelection(regionType, resetChildPositions, settings)
   local data = {
-    id = OptionsPrivate.Private.FindUnusedId(tempGroup.controlledChildren[1].." Group"),
+    id = OptionsPrivate.Private.FindUnusedId(tempGroup.controlledChildren[1]..(settings and settings.blizzardFlow and " Modern Aura Group" or " Group")),
     regionType = regionType,
   };
+  for key, value in pairs(settings or {}) do data[key] = value end
 
   WeakAuras.DeepMixin(data, OptionsPrivate.Private.data_stub)
   data.internalVersion = WeakAuras.InternalVersion()
@@ -357,6 +358,13 @@ function OptionsPrivate.MultipleDisplayTooltipMenu()
       notCheckable = 1,
       func = function()
         CreateNewGroupFromSelection("dynamicgroup", true)
+      end
+    },
+    {
+      text = "Add to new Modern Aura Group",
+      notCheckable = 1,
+      func = function()
+        CreateNewGroupFromSelection("group", false, {blizzardFlow = true, blizzardFlowGrowth = "RIGHT", blizzardFlowSpacing = 2})
       end
     },
     {
@@ -1762,10 +1770,18 @@ local BaseDynamicTextCodes = {
   }
 }
 
+local ModernTextCodes = {
+  {type = "mini", name = "p", desc = "Remaining time, drawn by Blizzard. Put it in its own text element."},
+  {type = "mini", name = "s", desc = "Stacks, drawn by Blizzard. Put it in its own text element."},
+  {type = "mini", name = "n", desc = "Aura name, drawn by Blizzard. Put it in its own text element."},
+  {type = "mini", name = "%", desc = L["% - To show a percent sign"]},
+}
+
 function OptionsPrivate.UpdateTextReplacements(frame, data)
   frame.scrollList:ReleaseChildren()
 
-  local props = OptionsPrivate.Private.GetAdditionalProperties(data)
+  local modern = OptionsPrivate.Private.BlizzardAuraDisplay.Enabled(data)
+  local props = modern and {} or OptionsPrivate.Private.GetAdditionalProperties(data)
   local sortedProps = {}
 
   -- Add global header and markers
@@ -1776,8 +1792,12 @@ function OptionsPrivate.UpdateTextReplacements(frame, data)
 
   -- Add base dynamic text codes
   local globalProps = {}
-  tAppendAll(globalProps, CopyTable(BaseDynamicTextCodes.trigger))
-  tAppendAll(globalProps, CopyTable(BaseDynamicTextCodes.global))
+  if modern then
+    tAppendAll(globalProps, CopyTable(ModernTextCodes))
+  else
+    tAppendAll(globalProps, CopyTable(BaseDynamicTextCodes.trigger))
+    tAppendAll(globalProps, CopyTable(BaseDynamicTextCodes.global))
+  end
   for _, prop in ipairs(globalProps) do
     prop.widthFraction = #globalProps
     prop.triggerNum = 0
@@ -1862,7 +1882,7 @@ function OptionsPrivate.UpdateTextReplacements(frame, data)
           tooltip:ClearLines()
           tooltip:AddLine(("%s%s"):format(propPrefix, prop.name))
           tooltip:AddLine(prop.desc, 1, 1, 1, true)
-          if prop.name ~= "c" and prop.name ~= "%" then
+          if prop.name ~= "c" and prop.name ~= "%" and not modern then
             tooltip:AddLine("\n")
             tooltip:AddLine(
               prop.triggerNum > 0
@@ -1958,6 +1978,11 @@ function WeakAuras.NewAura(sourceData, regionType, targetId)
   OptionsPrivate.Private.validate(data, OptionsPrivate.Private.regionTypes[regionType].default);
 
   AddDefaultSubRegions(data)
+
+  if not sourceData or not sourceData.triggers then
+    data.triggers[1].trigger.auraTracking = "readable"
+    OptionsPrivate.AuraEditor.Resolve(data, 1)
+  end
 
   if targetId then
     local target = OptionsPrivate.GetDisplayButton(targetId);

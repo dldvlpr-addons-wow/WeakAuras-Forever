@@ -505,7 +505,7 @@ local function ImportNow(data, children, target, linkedAuras, sender, callbackFu
 end
 
 function WeakAuras.Import(inData, target, callbackFunc, linkedAuras)
-  local data, children, version
+  local data, children, version, senderVersion
   if type(inData) == 'string' then
     -- encoded data
     local received = StringToTable(inData, true)
@@ -520,18 +520,22 @@ function WeakAuras.Import(inData, target, callbackFunc, linkedAuras)
       data = received.d
       children = received.c
       version = received.v
+      senderVersion = received.s
     end
   elseif type(inData.d) == 'table' then
     data = inData.d
     children = inData.c
     version = inData.v
+    senderVersion = inData.s
   end
   if type(data) ~= "table" then
     return nil, "Invalid import data."
   end
 
   -- Before the version check: ForeverAuras exports are found by their content
-  Private.ConvertForeverAurasImport(data, children)
+  if senderVersion ~= versionString then
+    Private.ConvertForeverAurasImport(data, children)
+  end
 
   local highestVersion = data.internalVersion or 0
   if children then

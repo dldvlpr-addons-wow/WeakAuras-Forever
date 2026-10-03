@@ -319,6 +319,7 @@ end
 
 local function onRelease(subRegion)
   UnbindDurationText(subRegion)
+  Private.CDMAuraProgress.HideText(subRegion)
   subRegion:Hide()
 end
 
@@ -336,28 +337,15 @@ local function modify(parent, region, parentData, data, first)
   if text.SetSmoothScaling then
     text:SetSmoothScaling(data.text_smoothScaling or false) -- doesn't accept nil
   end
-  text:SetFont(fontPath, data.text_fontSize, fontType);
-  if not text:GetFont() and fontPath then -- workaround font not loading correctly
-    fontObject:SetFont(fontPath, data.text_fontSize, fontType)
-    text:SetFontObject(fontObject)
-  end
-  if not text:GetFont() then -- Font invalid, set the font but keep the setting
-    text:SetFont(STANDARD_TEXT_FONT, data.text_fontSize, fontType);
-  end
+  fontObject:SetJustifyH(data.text_justify or "CENTER")
+  Private.ApplyTextFont(text, fontObject, fontPath, data.text_fontSize, fontType,
+    data.text_shadowColor, data.text_shadowXOffset, data.text_shadowYOffset)
   if text:GetFont() then
     text:SetText("") -- SetJustifyH is broken unless the text changes
     text:SetText(WeakAuras.ReplaceRaidMarkerSymbols(data.text_text));
   end
 
   text:SetTextHeight(data.text_fontSize);
-
-  fontObject:SetShadowColor(unpack(data.text_shadowColor))
-  if data.text_fontType == "OUTLINE|SLUG" then
-    fontObject:SetShadowOffset(0, 0)
-  else
-    fontObject:SetShadowOffset(data.text_shadowXOffset, data.text_shadowYOffset)
-  end
-  fontObject:SetJustifyH(data.text_justify or "CENTER")
 
   if (data.text_automaticWidth == "Fixed") then
     if (data.text_wordWrap == "WordWrap") then
@@ -454,9 +442,29 @@ local function modify(parent, region, parentData, data, first)
   function region:ConfigureTextUpdate()
     -- A text that is no longer only %p must not be overwritten by the duration text binding
     UnbindDurationText(region)
+    Private.CDMAuraProgress.HideText(region)
+    local nativeKind, nativeTrigger = Private.ParseCDMText(region.text_text)
+    if nativeKind == "bp" or nativeKind == "bs" then
+      region.Update = function()
+        if not text:GetFont() then return end
+        local state = nativeTrigger and parent.states and parent.states[nativeTrigger] or not nativeTrigger and parent.state
+        if Private.CDMAuraProgress.UpdateText(parent, region, data, nativeKind, nativeTrigger) then return end
+        Private.CopyCDMCountdownText(text, state, nativeKind)
+      end
+      region.FrameTick = region.Update
+      return
+    end
     local UpdateText
     if region.text_text and Private.ContainsAnyPlaceHolders(region.text_text) then
       UpdateText = function()
+        if Private.CDMAuraProgress.UpdateText(parent, region, data, nativeKind, nativeTrigger) then return end
+        if nativeKind then
+          local state = nativeTrigger and parent.states and parent.states[nativeTrigger] or not nativeTrigger and parent.state
+          if state and state.cdmBuff then
+            if text:GetFont() then Private.CopyCDMCountdownText(text, state, nativeKind) end
+            return
+          end
+        end
         if UpdateNativeText(region, parent, region.text_text or "") then
           return
         end
@@ -485,7 +493,8 @@ local function modify(parent, region, parentData, data, first)
     end
 
     local FrameTick
-    if Private.ContainsPlaceHolders(region.text_text, "p")
+    if (nativeKind and Private.IsCDMBuffText(region.text_text, parentData))
+       or Private.ContainsPlaceHolders(region.text_text, "p")
        or Private.AnyEveryFrameFormatters(region.text_text, region.everyFrameFormatters)
     then
       FrameTick = UpdateText
@@ -559,6 +568,7 @@ local function modify(parent, region, parentData, data, first)
     end
     region.text:SetTextHeight(size)
     region:UpdateAnchorOnTextChange();
+    Private.CDMAuraProgress.StyleText(region)
   end
 
   function region:SetVisible(visible)
@@ -580,6 +590,7 @@ local function modify(parent, region, parentData, data, first)
     end
     text:SetTextColor(region.color_anim_r or r, region.color_anim_g or g,
                       region.color_anim_b or b, region.color_anim_a or a)
+    Private.CDMAuraProgress.StyleText(region)
   end
 
   local selfPoint = data.text_selfPoint
@@ -612,10 +623,16 @@ local function modify(parent, region, parentData, data, first)
 
   local textDegrees = data.rotateText == "LEFT" and 90 or data.rotateText == "RIGHT" and -90 or 0;
 
+  region.AnchorNativeText = function(self, nativeText)
+    nativeText:ClearAllPoints()
+    nativeText:SetPoint(selfPoint, text, selfPoint)
+  end
+
   region.Anchor = function(self)
-    local xo, yo = getRotateOffset(text, textDegrees, selfPoint)
+    local xo, yo = getRotateOffset(text, Private.IsCDMBuffText(region.text_text, parentData) and 0 or textDegrees, selfPoint)
     parent:AnchorSubRegion(text, "point", data.anchor_point, selfPoint,
                            (self.text_anchorXOffset or 0) + xo, (self.text_anchorYOffset or 0) + yo)
+    Private.CDMAuraProgress.StyleText(region)
   end
 
   if textDegrees == 0 then
@@ -643,6 +660,7 @@ local function modify(parent, region, parentData, data, first)
   region:Color(data.text_color[1], data.text_color[2], data.text_color[3], data.text_color[4]);
   region:SetVisible(data.text_visible)
   animRotate(text, textDegrees, selfPoint)
+  Private.CDMAuraProgress.ModifyText(parent, region, parentData, data)
 end
 
 local function addDefaultsForNewAura(data)

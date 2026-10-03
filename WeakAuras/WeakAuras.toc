@@ -35,6 +35,11 @@ Features.lua
 TimeMachine.lua
 Types_Vanilla.lua
 Types.lua
+PlayerSpecialization.lua
+CDMBackground.lua
+CDMSetup.lua
+CooldownViewerCatalog.lua
+CooldownViewerTrigger.lua
 Prototypes.lua
 Profiling.lua
 Profiling.xml
@@ -49,6 +54,17 @@ Conditions.lua
 AnchorToWeakAuras.lua
 
 # Trigger systems
+SecretAuraRanks.lua
+BlizzardAuraDisplay.lua
+SecretAuraPreview.lua
+DispelTypeDisplay.lua
+CDMAuraProgress.lua
+SecretAuraAppearance.lua
+SecretAuraConditions.lua
+SecretAuraSingle.lua
+SecretAuraGlow.lua
+SecretAuraFlow.lua
+SecretAuraTrigger.lua
 BuffTrigger2.lua
 GenericTrigger.lua
 BossMods.lua
@@ -59,6 +75,8 @@ AuraWarnings.lua
 AuraEnvironment.lua
 AuraEnvironmentWrappedSystems.lua
 DebugLog.lua
+TextStyle.lua
+DurationText.lua
 
 # Region support
 RegionTypes\SmoothStatusBarMixin.lua
@@ -67,6 +85,7 @@ RegionTypes\Empty.lua
 BaseRegions\TextureCoords.lua
 BaseRegions\CircularProgressTexture.lua
 BaseRegions\LinearProgressTexture.lua
+ProgressTextureNative.lua
 RegionTypes\ProgressTexture.lua
 BaseRegions\Texture.lua
 RegionTypes\Texture.lua
@@ -89,6 +108,8 @@ SubRegionTypes\Tick.lua
 SubRegionTypes\Model.lua
 SubRegionTypes\StopMotion.lua
 SubRegionTypes\Texture.lua
+SubRegionTypes\CDMDispel.lua
+SubRegionTypes\CDMDispelBorder.lua
 SubRegionTypes\CircularProgressTexture.lua
 SubRegionTypes\LinearProgressTexture.lua
 

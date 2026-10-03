@@ -131,14 +131,18 @@ local function CanHaveMatchCheck(trigger)
   return trigger.showClones
 end
 
-local function CreateNameOptions(aura_options, data, triggernum, size, isExactSpellId, isIgnoreList, prefix, baseOrder, useKey, optionKey, name, desc, inverse)
+local function CreateNameOptions(aura_options, data, triggernum, size, isExactSpellId, isIgnoreList, prefix, baseOrder, useKey, optionKey, name, desc, inverse, enabled, onChanged)
   local trigger = data.triggers[triggernum].trigger
 
   local spellCache = WeakAuras.spellCache
 
   for i = 1, size do
     local hiddenFunction
-    if isIgnoreList then
+    if enabled then
+      hiddenFunction = function()
+        return not (enabled() and (i == 1 or trigger[optionKey] and trigger[optionKey][i - 1]))
+      end
+    elseif isIgnoreList then
       hiddenFunction = function()
         return not (trigger.type == "aura2" and trigger[useKey] and (i == 1 or trigger[optionKey] and trigger[optionKey][i - 1]) and trigger.unit ~= "multi" and CanHaveMatchCheck(trigger))
       end
@@ -228,8 +232,10 @@ local function CreateNameOptions(aura_options, data, triggernum, size, isExactSp
           local _, bestSuggestion = getAuraMatchesList(input)
           if bestSuggestion then
             trigger[optionKey][i] = bestSuggestion
-            WeakAuras.Add(data)
-            WeakAuras.ClearAndUpdateOptions(data.id)
+            if onChanged then onChanged() else
+              WeakAuras.Add(data)
+              WeakAuras.ClearAndUpdateOptions(data.id)
+            end
           end
         end
       end
@@ -271,9 +277,11 @@ local function CreateNameOptions(aura_options, data, triggernum, size, isExactSp
           end
         end
 
-        WeakAuras.Add(data)
-        WeakAuras.UpdateThumbnail(data)
-        WeakAuras.ClearAndUpdateOptions(data.id)
+        if onChanged then onChanged() else
+          WeakAuras.Add(data)
+          WeakAuras.UpdateThumbnail(data)
+          WeakAuras.ClearAndUpdateOptions(data.id)
+        end
       end,
       validate = isExactSpellId and WeakAuras.ValidateNumeric or nil,
       control = "WeakAurasInputFocus",
@@ -281,6 +289,8 @@ local function CreateNameOptions(aura_options, data, triggernum, size, isExactSp
   end
   -- VALIDATE ?
 end
+
+OptionsPrivate.CreateAuraSpellOptions = CreateNameOptions
 
 local function GetBuffTriggerOptions(data, triggernum)
   local trigger = data.triggers[triggernum].trigger
@@ -471,6 +481,14 @@ local function GetBuffTriggerOptions(data, triggernum)
       order = 12.1,
       width = WeakAuras.normalWidth,
       hidden = function() return not (trigger.type == "aura2" and not trigger.useName) end
+    },
+    secretSpellWarning = {
+      type = "description",
+      name = OptionsPrivate.TriggerSecretWarnings.text,
+      fontSize = "small",
+      width = "full",
+      order = 1.4,
+      hidden = function() return not OptionsPrivate.TriggerSecretWarnings.HasSecretAuraSpell(trigger) end,
     },
     useExactSpellId = {
       type = "toggle",

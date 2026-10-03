@@ -40,9 +40,64 @@ local ignoreForCopyingDisplay = {
   tocversion = true
 }
 
+local function NativeDisplayKind(data)
+  for _, entry in ipairs(data.triggers or {}) do
+    if entry.trigger.type == "secretAura" then return "aura" end
+  end
+  for _, entry in ipairs(data.triggers or {}) do
+    if entry.trigger.type == "cdm" then return "cdm" end
+  end
+end
+
+local nativeAppearance = {
+  width = true, height = true, alpha = true, color = true, barColor = true,
+  backgroundColor = true, foregroundColor = true, texture = true,
+  cooldown = true, cooldownSwipe = true, cooldownEdge = true, cooldownTextDisabled = true,
+  inverse = true, zoom = true, desaturate = true,
+  font = true, fontSize = true, outline = true, justify = true,
+  shadowColor = true, shadowXOffset = true, shadowYOffset = true,
+}
+local nativeElementAppearance = {
+  text_font = true, text_fontSize = true, text_fontType = true, text_color = true,
+  text_shadowColor = true, text_shadowXOffset = true, text_shadowYOffset = true,
+  text_justify = true, text_justifyV = true,
+  border_color = true, border_size = true, border_offset = true,
+}
+local function CopyNativeAppearance(source, destination)
+  for key in pairs(nativeAppearance) do
+    local value = source[key]
+    if value ~= nil then destination[key] = type(value) == "table" and CopyTable(value) or value end
+  end
+  local elements, occurrences = {}, {}
+  for _, sub in ipairs(source.subRegions or {}) do
+    elements[sub.type] = elements[sub.type] or {}
+    tinsert(elements[sub.type], sub)
+  end
+  for _, sub in ipairs(destination.subRegions or {}) do
+    occurrences[sub.type] = (occurrences[sub.type] or 0) + 1
+    local other = elements[sub.type] and elements[sub.type][occurrences[sub.type]]
+    if other then
+      for key in pairs(nativeElementAppearance) do
+        local value = other[key]
+        if value ~= nil then sub[key] = type(value) == "table" and CopyTable(value) or value end
+      end
+    end
+  end
+end
+
 local function copyAuraPart(source, destination, part)
   local all = (part == "all");
-  if (part == "display" or all) then
+  local sourceKind, destinationKind = NativeDisplayKind(source), NativeDisplayKind(destination)
+  local sameNative = sourceKind ~= nil and sourceKind == destinationKind and source.regionType == destination.regionType
+  if part == "display" and (destinationKind or sourceKind) and not sameNative then
+    CopyNativeAppearance(source, destination)
+    if NativeDisplayKind(source) == "aura" and NativeDisplayKind(destination) == "aura" then
+      if source.blizzardAuraDisplay then destination.blizzardAuraDisplay = CopyTable(source.blizzardAuraDisplay) end
+      local Display = OptionsPrivate.Private.BlizzardAuraDisplay
+      local from, to = Display.GetSavedTrigger(source), Display.GetSavedTrigger(destination)
+      if from and to then to.sortMethod, to.sortReverse = from.sortMethod, from.sortReverse end
+    end
+  elseif (part == "display" or all) then
     for k, v in pairs(source) do
       if (not ignoreForCopyingDisplay[k]) then
         if (type(v) == "table") then
@@ -51,6 +106,11 @@ local function copyAuraPart(source, destination, part)
           destination[k] = v;
         end
       end
+    end
+    if part == "display" and sameNative and sourceKind == "aura" then
+      local Display = OptionsPrivate.Private.BlizzardAuraDisplay
+      local from, to = Display.GetSavedTrigger(source), Display.GetSavedTrigger(destination)
+      if from and to then to.sortMethod, to.sortReverse = from.sortMethod, from.sortReverse end
     end
   end
   if (part == "trigger" or all) and not IsRegionAGroup(source) then
@@ -1054,6 +1114,7 @@ local methods = {
     tinsert(namestable, {" ", "|cFF00FFFF"..L["Shift-click to create chat link"]});
     local regionData = OptionsPrivate.Private.regionOptions[data.regionType or ""]
     local displayName = regionData and regionData.displayName or "";
+    if data.regionType == "group" and data.blizzardFlow then displayName = "Modern Aura Group" end
     self:SetDescription({data.id, displayName}, unpack(namestable));
   end,
   ["ReloadTooltip"] = function(self)

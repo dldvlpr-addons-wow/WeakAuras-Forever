@@ -2512,6 +2512,15 @@ function Private.Modernize(data, oldSnapshot)
     end
   end
 
+  for _, triggerData in ipairs(data.triggers or {}) do
+    local trigger = triggerData.trigger
+    if trigger and trigger.type == "spell" and trigger.event == "Blizzard Cooldown Manager" then
+      trigger.type = "cdm"
+      if trigger.cdmSource == "buff" then trigger.event = "Blizzard CDM Buff" end
+    end
+    Private.MigrateCDMCooldownTrigger(trigger)
+  end
+
   data.internalVersion = max(data.internalVersion or 0, WeakAuras.InternalVersion())
 end
 

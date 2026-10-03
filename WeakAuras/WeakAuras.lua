@@ -270,15 +270,18 @@ end
 
 if not WeakAuras.IsLibsOK() then return end
 
--- The Cooldown Manager follows this CVar itself, and shows again when it is set back
 function Private.ToggleCooldownManager()
   if InCombatLockdown() then
     prettyPrint(L["Cannot change the Cooldown Manager in combat."])
     return
   end
-  local enabled = C_CVar.GetCVarBool("cooldownViewerEnabled")
-  C_CVar.SetCVar("cooldownViewerEnabled", enabled and "0" or "1")
-  prettyPrint(enabled and L["Blizzard Cooldown Manager hidden."] or L["Blizzard Cooldown Manager shown."])
+  local shown = C_CVar.GetCVarBool("cooldownViewerEnabled") and not Private.db.cdmHideBlizzard
+  Private.db.cdmHideBlizzard = shown or nil
+  if not shown then
+    C_CVar.SetCVar("cooldownViewerEnabled", "1")
+  end
+  Private.ApplyCDMBackground()
+  prettyPrint(shown and L["Blizzard Cooldown Manager hidden."] or L["Blizzard Cooldown Manager shown."])
 end
 
 function WeakAuras.ToggleMinimap()
@@ -383,6 +386,14 @@ Private.triggerTypesOptions = {};
 --  spellId: spellId of the buff/debuff, used to set the tooltip
 
 local triggerState = {}
+function Private.GetActiveTriggerFor(id)
+  local state = triggerState[id]
+  if not state then return end
+  if state.activeTriggerMode and state.activeTriggerMode > 0 then return state.activeTriggerMode end
+  for index = 1, state.numTriggers or 0 do
+    if state.triggers and state.triggers[index] then return index end
+  end
+end
 
 -- Fallback states
 local fallbacksStates = {};
@@ -1731,6 +1742,7 @@ local function scanForLoadsImpl(toCheck, event, arg1, ...)
   end
 
   local mounted = IsMounted()
+  local addonRestrictionsActive = WeakAuras.IsSecretStateActive()
   if WeakAuras.IsClassicOrTBCOrWrathOrCataOrMists() then
     local raidID = UnitInRaid("player")
     if raidID then
@@ -1799,26 +1811,26 @@ local function scanForLoadsImpl(toCheck, event, arg1, ...)
       local loadOpt = loadFuncsForOptions[id];
       if Private.hasSpecializations then
         -- Classic Era with the class_and_spec load option, see Private.load_prototype
-        shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, vehicle, mounted, hardcore, runeEngraving, class, specId, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficultyIndex)
-        couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, vehicle, mounted, hardcore, runeEngraving, class, specId, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficultyIndex)
+        shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, vehicle, mounted, addonRestrictionsActive, hardcore, runeEngraving, class, specId, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficultyIndex)
+        couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, vehicle, mounted, addonRestrictionsActive, hardcore, runeEngraving, class, specId, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficultyIndex)
       elseif WeakAuras.IsClassicEra() then
-        shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, vehicle, mounted, hardcore, runeEngraving, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficultyIndex)
-        couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, vehicle, mounted, hardcore, runeEngraving, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficultyIndex)
+        shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, vehicle, mounted, addonRestrictionsActive, hardcore, runeEngraving, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficultyIndex)
+        couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, vehicle, mounted, addonRestrictionsActive, hardcore, runeEngraving, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficultyIndex)
       elseif WeakAuras.IsTBC() then
-        shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, vehicle, vehicleUi, mounted, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
-        couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, vehicle, vehicleUi, mounted, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
+        shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, vehicle, vehicleUi, mounted, addonRestrictionsActive, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
+        couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, vehicle, vehicleUi, mounted, addonRestrictionsActive, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
       elseif WeakAuras.IsWrathClassic() then
-        shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, vehicle, vehicleUi, mounted, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
-        couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, vehicle, vehicleUi, mounted, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
+        shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, vehicle, vehicleUi, mounted, addonRestrictionsActive, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
+        couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, vehicle, vehicleUi, mounted, addonRestrictionsActive, class, player, realm, guild, race, faction, playerLevel, role, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
       elseif WeakAuras.IsCataClassic() then
-        shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, vehicle, vehicleUi, mounted, class, specId, player, realm, guild, race, faction, playerLevel, role, position, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
-        couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, vehicle, vehicleUi, mounted, class, specId, player, realm, guild, race, faction, playerLevel, role, position, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
+        shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, vehicle, vehicleUi, mounted, addonRestrictionsActive, class, specId, player, realm, guild, race, faction, playerLevel, role, position, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
+        couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, vehicle, vehicleUi, mounted, addonRestrictionsActive, class, specId, player, realm, guild, race, faction, playerLevel, role, position, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
       elseif WeakAuras.IsMists() then
-        shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, inPetBattle, vehicle, vehicleUi, mounted, class, specId, player, realm, guild, race, faction, playerLevel, role, position, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
-        couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, inPetBattle, vehicle, vehicleUi, mounted, class, specId, player, realm, guild, race, faction, playerLevel, role, position, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
+        shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, inPetBattle, vehicle, vehicleUi, mounted, addonRestrictionsActive, class, specId, player, realm, guild, race, faction, playerLevel, role, position, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
+        couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, inPetBattle, vehicle, vehicleUi, mounted, addonRestrictionsActive, class, specId, player, realm, guild, race, faction, playerLevel, role, position, raidRole, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex)
       elseif WeakAuras.IsRetail() then
-        shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, warmodeActive, inPetBattle, vehicle, vehicleUi, dragonriding, mounted, specId, player, realm, guild, race, faction, playerLevel, effectiveLevel, role, position, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex, affixes)
-        couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, warmodeActive, inPetBattle, vehicle, vehicleUi, dragonriding, mounted, specId, player, realm, guild, race, faction, playerLevel, effectiveLevel, role, position, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex, affixes)
+        shouldBeLoaded = loadFunc and loadFunc("ScanForLoads_Auras", inCombat, alive, inEncounter, pvp, warmodeActive, inPetBattle, vehicle, vehicleUi, dragonriding, mounted, addonRestrictionsActive, specId, player, realm, guild, race, faction, playerLevel, effectiveLevel, role, position, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex, affixes)
+        couldBeLoaded =  loadOpt and loadOpt("ScanForLoads_Auras",   inCombat, alive, inEncounter, pvp, warmodeActive, inPetBattle, vehicle, vehicleUi, dragonriding, mounted, addonRestrictionsActive, specId, player, realm, guild, race, faction, playerLevel, effectiveLevel, role, position, group, groupSize, raidMemberType, zone, zoneId, zonegroupId, instanceId, minimapText, encounter_id, size, difficulty, difficultyIndex, affixes)
       end
 
       if(shouldBeLoaded and not loaded[id]) then
@@ -1957,6 +1969,18 @@ if WeakAuras.IsRetail() then
     Private.StopProfileSystem("load");
   end)
 end
+
+Private.callbacks:RegisterCallback("RestrictionChanged", function()
+  Private.StartProfileSystem("load");
+  Private.ScanForLoads(nil, "WA_RESTRICTION_CHANGED")
+  Private.StopProfileSystem("load");
+end)
+
+Private.callbacks:RegisterCallback("WA_BOSSMOD_ENABLED_STATE_CHANGED", function()
+  Private.StartProfileSystem("load");
+  Private.ScanForLoads(nil, "WA_BOSSMOD_ENABLED_STATE_CHANGED")
+  Private.StopProfileSystem("load");
+end)
 
 local unitLoadFrame = CreateFrame("Frame");
 Private.frames["Display Load Handling 2"] = unitLoadFrame;
@@ -2137,6 +2161,7 @@ function Private.UnloadDisplays(toUnload, ...)
     local uid = WeakAuras.GetData(id).uid
     Private.UnloadConditions(uid)
 
+    Private.BlizzardAuraDisplay.Release(Private.regions[id].region)
     Private.regions[id].region:Collapse();
     Private.CollapseAllClones(id);
 
@@ -2385,6 +2410,7 @@ function Private.Convert(data, newType)
   Private.FakeStatesFor(id, false)
 
   if Private.regions[id] then
+    Private.BlizzardAuraDisplay.Release(Private.regions[id].region)
     Private.regions[id].region = nil
     Private.regions[id] = nil
   end
@@ -3209,6 +3235,7 @@ function WeakAuras.PreAdd(data, snapshot)
   end
 
   xpcall(Private.Modernize, Private.GetErrorHandlerId(data.id, L["Modernize"]), data, snapshot)
+  xpcall(Private.BlizzardAuraDisplay.Migrate, Private.GetErrorHandlerId(data.id, L["Modernize"]), data)
 
   local default = data.regionType and Private.regionTypes[data.regionType] and Private.regionTypes[data.regionType].default
   if default then
@@ -3257,6 +3284,17 @@ local function cycleCheck(data)
 end
 
 function pAdd(data, simpleChange)
+  if data.cdmDispelIndicator then
+    data.subRegions = data.subRegions or {}
+    table.insert(data.subRegions, {
+      type = "subcdmdispel", dispelVisible = true, dispelStyle = "Border",
+      anchor_mode = "area", anchor_area = data.regionType == "aurabar" and "bar" or "ALL",
+      self_point = "CENTER", anchor_point = "CENTER", width = 32, height = 32,
+      xOffset = 0, yOffset = 0,
+    })
+    data.cdmDispelIndicator = nil
+  end
+  Private.DispelTypeDisplay.Migrate(data)
   local id = data.id;
   if not(id) then
     error("Improper arguments to WeakAuras.Add - id not defined");
@@ -3269,6 +3307,12 @@ function pAdd(data, simpleChange)
   end
   if UIDtoID[data.uid] and UIDtoID[data.uid] ~= id then
     print("Improper? arguments to WeakAuras.Add - uid is assigned to a id. Uid:", data.uid, "assigned too:", UIDtoID[data.uid], "assigning now to", data.id)
+  end
+
+  if not Private.BlizzardAuraDisplay.Enabled(data) then
+    Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_display", nil)
+    Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_sound", nil)
+    Private.AuraWarnings.UpdateWarning(data.uid, "blizzard_aura_single", nil)
   end
 
   local otherID = UIDtoID[data.uid]
@@ -3512,7 +3556,9 @@ function Private.SetRegion(data, cloneId)
       local loginFinished = WeakAuras.IsLoginFinished();
       local anim_cancelled = loginFinished and Private.CancelAnimation(region, true, true, true, true, true, true);
 
+      Private.BlizzardAuraDisplay.Restore(region)
       regionTypes[regionType].modify(parent, region, data);
+      Private.BlizzardAuraDisplay.Modify(region, data)
       Private.regionPrototype.AddSetDurationInfo(region, data.uid)
       Private.regionPrototype.AddExpandFunction(data, region, cloneId, parent, parent.regionType)
 
@@ -3783,6 +3829,7 @@ local anchor_unitframe_monitor
 Private.dyngroup_unitframe_monitor = {}
 do
   local function frame_monitor_callback(event, frame, unit, previousUnit)
+    if Private.BlizzardAuraDisplay then Private.BlizzardAuraDisplay.UnitFramesChanged() end
     local new_frame
     local FRAME_UNIT_UPDATE = event == "FRAME_UNIT_UPDATE"
     local FRAME_UNIT_ADDED = event == "FRAME_UNIT_ADDED"
@@ -3942,6 +3989,10 @@ function Private.HandleGlowAction(actions, region)
 end
 
 function Private.PerformActions(data, when, region)
+  if when == "finish" and data.actions.finish.hide_all_glows and Private.BlizzardAuraDisplay then
+    Private.BlizzardAuraDisplay.HideUnitGlows(region)
+  end
+  local nativeAura = Private.BlizzardAuraDisplay.Enabled(data)
   if (paused or WeakAuras.IsOptionsOpen()) then
     return;
   end;
@@ -3957,10 +4008,12 @@ function Private.PerformActions(data, when, region)
     return;
   end
 
-  if(actions.do_message and actions.message_type and actions.message) then
-    local customFunc = Private.customActionsFunctions[data.id][when .. "_message"];
+  if(not nativeAura and actions.do_message and actions.message_type and actions.message) then
+    local customFunc = not nativeAura and Private.customActionsFunctions[data.id][when .. "_message"];
     Private.HandleChatAction(actions.message_type, actions.message, actions.message_dest, actions.message_dest_isunit, actions.message_channel, actions.r, actions.g, actions.b, region, {customFunc = customFunc}, when, formatters);
   end
+
+  if nativeAura then return end
 
   if (actions.stop_sound) then
     if (region.SoundStop) then
@@ -4265,7 +4318,7 @@ function Private.GetTriggerConditions(data)
       }
     end
   end
-  return conditions;
+  return Private.BlizzardAuraDisplay.FilterConditionTemplates(data, conditions);
 end
 
 local function CreateFallbackState(id, triggernum)
@@ -4558,6 +4611,8 @@ function Private.ApplyFrameLevel(region, frameLevel)
   else
     region:SetFrameLevel(frameLevel)
   end
+  Private.BlizzardAuraDisplay.UpdateDetachedFrameLevels(region)
+  Private.CDMAuraProgress.SyncFrameLevels(region, true)
 end
 
 function WeakAuras.EnsureString(input)
@@ -4958,6 +5013,7 @@ end
 local function ApplyStateToRegion(id, cloneId, region, parent)
   -- Force custom text function to be run again
   region.values.customTextUpdated = false
+  Private.BlizzardAuraDisplay.SyncProgressSource(region, WeakAuras.GetData(id))
   region:Update();
 
   region.subRegionEvents:Notify("Update", region.state, region.states)
@@ -6180,6 +6236,13 @@ local function GetAnchorFrame(data, region, parent)
     mouseFrame:anchorFrame(id, anchorFrameType);
   end
 
+  if (anchorFrameType == "UNITFRAME" or anchorFrameType == "NAMEPLATE")
+    and Private.BlizzardAuraDisplay and Private.BlizzardAuraDisplay.Enabled(data)
+    and not (WeakAuras.IsOptionsOpen() and not InCombatLockdown()) then
+    if anchor_unitframe_monitor then anchor_unitframe_monitor[region] = nil end
+    return parent or UIParent
+  end
+
   if (anchorFrameType == "SCREEN") then
     return parent;
   end
@@ -6215,8 +6278,15 @@ local function GetAnchorFrame(data, region, parent)
 
   if (anchorFrameType == "UNITFRAME") then
     local unit = region.state and region.state.unit
+    if WeakAuras.IsOptionsOpen() and Private.BlizzardAuraDisplay.Enabled(data) then
+      unit = Private.BlizzardAuraDisplay.GetPreviewUnit(data)
+    end
     if unit then
-      local frame = WeakAuras.GetUnitFrame(unit) or WeakAuras.HiddenFrames
+      local frame = WeakAuras.GetUnitFrame(unit)
+      if not frame and WeakAuras.IsOptionsOpen() and Private.BlizzardAuraDisplay.Enabled(data) then
+        frame = parent or UIParent
+      end
+      frame = frame or WeakAuras.HiddenFrames
       if frame then
         anchor_unitframe_monitor = anchor_unitframe_monitor or {}
         anchor_unitframe_monitor[region] = {
@@ -6282,9 +6352,25 @@ function Private.AnchorFrame(data, region, parent, force)
       anchorFrameDeferred[data.id] = true
     end
   else
+    local flowPreview = data.regionType == "group" and Private.BlizzardAuraDisplay.FlowPreviewFrame
+      and Private.BlizzardAuraDisplay.FlowPreviewFrame(data)
+    if flowPreview then
+      region:SetParent(parent or WeakAurasFrame)
+      region:SetAnchor(data.selfPoint, flowPreview, data.anchorPoint)
+      if data.frameStrata == 1 then
+        region:SetFrameStrata(region:GetParent():GetFrameStrata())
+      else
+        region:SetFrameStrata(Private.frame_strata_types[data.frameStrata])
+      end
+      Private.ApplyFrameLevel(region)
+      anchorFrameDeferred[data.id] = nil
+      return
+    end
     local anchorParent = GetAnchorFrame(data, region, parent);
     if not anchorParent then return end
-    if (data.anchorFrameParent or data.anchorFrameParent == nil
+    if Private.BlizzardAuraDisplay.Enabled(data) and (data.anchorFrameType == "UNITFRAME" or data.anchorFrameType == "NAMEPLATE") then
+      region:SetParent(parent or WeakAurasFrame);
+    elseif (data.anchorFrameParent or data.anchorFrameParent == nil
         or data.anchorFrameType == "SCREEN" or data.anchorFrameType == "UIPARENT" or data.anchorFrameType == "MOUSE") then
       xpcall(region.SetParent, Private.GetErrorHandlerId(data.id, L["Anchoring"]), region, anchorParent);
     else

@@ -22,6 +22,7 @@
 embeds.xml
 locales.xml
 
+VersionCheck.lua
 ForAllIndentsAndPurposes.lua
 
 RegionOptions\Empty.lua
@@ -45,10 +46,14 @@ SubRegionOptions\Tick.lua
 SubRegionOptions\Model.lua
 SubRegionOptions\StopMotion.lua
 SubRegionOptions\Texture.lua
+SubRegionOptions\CDMDispel.lua
+SubRegionOptions\CDMDispelBorder.lua
 SubRegionOptions\CircularProgressTexture.lua
 SubRegionOptions\LinearProgressTexture.lua
 
 Cache.lua
+TriggerSecretWarnings.lua
+AuraTriggerOptions.lua
 
 CommonOptions.lua
 GroupOptions.lua
@@ -58,8 +63,11 @@ LoadOptions.lua
 ActionOptions.lua
 AnimationOptions.lua
 InformationOptions.lua
+AuraDisplayOptions.lua
 
 BuffTrigger2.lua
+SecretAuraTriggerOptions.lua
+CooldownViewerOptions.lua
 GenericTrigger.lua
 
 WeakAurasOptions.lua
@@ -116,3 +124,5 @@ AceGUI-Widgets\AceGUIWidget-WeakAurasInputFocus.lua
 AceGUI-Widgets\AceGUIWidget-WeakAurasInputWithIndentation.lua
 AceGUI-Widgets\AceGuiWidget-WeakAurasMediaSound.lua
 AceGUI-Widgets\WeakAurasStatusbarAtlasWidget.lua
+ColorPalette.lua
+AceGUI-Widgets\AceGUIWidget-WeakAurasColorPicker.lua

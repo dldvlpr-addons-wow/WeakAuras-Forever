@@ -23,6 +23,13 @@ local default = {
   borderSize = 2,
   borderBackdrop = "Blizzard Tooltip",
   scale = 1,
+  blizzardFlow = false,
+  blizzardFlowGrowth = "RIGHT",
+  blizzardFlowSpacing = 2,
+  blizzardFlowSort = "Default",
+  blizzardFlowReverse = false,
+  blizzardFlowUseLimit = false,
+  blizzardFlowLimit = 5,
 };
 
 Private.regionPrototype.AddAlphaToDefault(default);
@@ -90,7 +97,9 @@ end
 
 -- Modify a given region/display
 local function modify(parent, region, data)
-  if data.information.groupOffset then
+  if data.blizzardFlow and data.blizzardFlowFrames then
+    data.selfPoint = data.selfPoint or "CENTER"
+  elseif data.information.groupOffset then
     data.selfPoint = "BOTTOMLEFT";
   else
     data.selfPoint = "CENTER";
@@ -193,6 +202,10 @@ local function modify(parent, region, data)
   end
 
   Private.regionPrototype.modifyFinish(parent, region, data);
+  if data.blizzardFlow and Private.BlizzardAuraDisplay and Private.BlizzardAuraDisplay.RechainFlow then
+    Private.BlizzardAuraDisplay.RechainFlow(data)
+    if WeakAuras.IsOptionsOpen() then Private.BlizzardAuraDisplay.ArrangeFlowPreview(data) end
+  end
 end
 
 -- Register new region type with WeakAuras

@@ -31,17 +31,31 @@ local L = WeakAuras.L
 
 local SpellRange = LibStub("SpellRange-1.0")
 function WeakAuras.IsSpellInRange(spellId, unit)
+  if C_Spell.IsSpellInRange then
+    local ok, result = pcall(C_Spell.IsSpellInRange, spellId, unit)
+    if not ok or Private.IsSecret(result) or result == nil then
+      return nil
+    end
+    return result and 1 or 0
+  end
   return SpellRange.IsSpellInRange(spellId, unit)
 end
 
 local LibRangeCheck = LibStub("LibRangeCheck-3.0")
 
 function WeakAuras.GetRange(unit, checkVisible)
-  return LibRangeCheck:GetRange(unit, checkVisible);
+  local ok, min, max = pcall(LibRangeCheck.GetRange, LibRangeCheck, unit, checkVisible)
+  if not ok or Private.IsSecret(min) or Private.IsSecret(max) then
+    return nil
+  end
+  return min, max
 end
 
 function WeakAuras.CheckRange(unit, range, operator)
-  local min, max = LibRangeCheck:GetRange(unit, true);
+  local ok, min, max = pcall(LibRangeCheck.GetRange, LibRangeCheck, unit, true)
+  if not ok or Private.IsSecret(min) or Private.IsSecret(max) then
+    return
+  end
   if (type(range) ~= "number") then
     range = tonumber(range);
   end
@@ -1294,14 +1308,24 @@ function WeakAuras.GetNumSetItemsEquipped(setID)
   return equipped, 18, setName
 end
 
----@return number result
+---@return number? result
 function WeakAuras.GetEffectiveAttackPower()
   local base, pos, neg = UnitAttackPower("player")
+  if Private.IsSecret(base, pos, neg) then
+    return nil
+  end
   return base + pos + neg
 end
 
---- @type fun(): number
+Private.ExecEnv.AreUnitStatsSecret = function()
+  return Private.IsRestricted("unitStats") or Private.IsSecret(UnitStat("player", 1))
+end
+
+--- @type fun(): number?
 function WeakAuras.GetEffectiveSpellPower()
+  if Private.IsRestricted("unitStats") then
+    return nil
+  end
   -- Straight from the PaperDoll
   local spellPower = 0
   for i = 2, MAX_SPELL_SCHOOLS or 7 do
@@ -1510,6 +1534,16 @@ Private.load_prototype = {
       events = {"PLAYER_MOUNT_DISPLAY_CHANGED"}
     },
     {
+      name = "addonRestrictionsActive",
+      display = L["Secret Restrictions Active"],
+      type = "tristate",
+      init = "arg",
+      width = WeakAuras.normalWidth,
+      optional = true,
+      events = {"WA_RESTRICTION_CHANGED"},
+      desc = L["The game hides combat data from addons: in combat, boss encounters and PvP matches."],
+    },
+    {
       name = "hardcore",
       display = L["Hardcore"],
       type = "tristate",
@@ -1553,6 +1587,17 @@ Private.load_prototype = {
                or {"PLAYER_TALENT_UPDATE"},
       sorted = true,
       sortOrder = Private.specs_sorted,
+    },
+    {
+      name = "forever_spec",
+      display = L["Specialization"],
+      type = "multiselect",
+      values = "forever_spec_types",
+      test = "Private.ExecEnv.IsForeverSpecialization(%s)",
+      events = {"SPELLS_CHANGED", "PLAYER_TALENT_UPDATE", "PLAYER_ENTERING_WORLD"},
+      sorted = true,
+      sortOrder = Private.forever_specs_sorted,
+      desc = L["Matches a specialization when you have learned its final talent, such as Combustion for Fire Mage. Any rank counts. No match before learning that talent or after unlearning it. Select multiple specializations to match any of them. Feral Combat includes both cat and bear builds. Your assigned Role is checked separately."],
     },
     {
       name = "talent",
@@ -2067,6 +2112,17 @@ Private.load_prototype = {
       optional = true,
     },
     {
+      name = "enabledBossModID",
+      display = L["Enabled BossMod ID(BW Only)"],
+      type = "string",
+      multiline = true,
+      desc = Private.get_encounters_list,
+      preamble = "local bossModChecker = Private.ExecEnv.ParseBossModCheck(%q)",
+      test = "bossModChecker:Check()",
+      events = {"WA_BOSSMOD_ENABLED_STATE_CHANGED"},
+      optional = true,
+    },
+    {
       name = "size",
       display = L["Instance Size Type"],
       type = "multiselect",
@@ -2347,6 +2403,7 @@ local unitHelperFunctions = {
 }
 
 Private.event_categories = {
+  cdm = {name = "Blizzard Cooldown Manager", default = "Blizzard Cooldown Manager"},
   spell = {
     name = L["Spell"],
     default = "Cooldown Progress (Spell)"
@@ -2515,7 +2572,68 @@ Private.ExecEnv.GetTotemDurationObject = function(slot)
   end
 end
 
+local castReadableArgs = {
+  {"spellNames", "Name(s)"}, {"spellIds", "Exact Spell ID(s)"}, {"spellId", "Spell ID"}, {"spell", "Spellname"},
+  {"interruptible", "Interruptible"}, {"remaining", "Remaining Time"},
+  {"empowered", "Empowered"}, {"stage", "Stage"}, {"stageTotal", "Stage Total"}, {"charged", "Charged"},
+}
+local castSpellArgs = {spellNames = true, spellIds = true}
+
+local function CastSpellNeverSecret(value)
+  if not (C_Secrets and C_Secrets.GetSpellCastSecrecy and Enum and Enum.SecrecyLevel) then
+    return false
+  end
+  local id = tonumber(value)
+  if not id then
+    local info = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(value)
+    id = info and info.spellID
+  end
+  if not id or Private.IsSecret(id) then
+    return false
+  end
+  local ok, secrecy = pcall(C_Secrets.GetSpellCastSecrecy, id)
+  return ok and not Private.IsSecret(secrecy) and secrecy == Enum.SecrecyLevel.NeverSecret
+end
+
+function Private.CastCombatStatus(trigger)
+  trigger = type(trigger) == "table" and trigger or {}
+  local unit = trigger.unit or "player"
+  if unit == "member" and type(trigger.specificUnit) == "string" and trigger.specificUnit:lower() == "player" then
+    unit = "player"
+  end
+  if unit == "player" then
+    return L["|cff33ff99Works in combat.|r"]
+  end
+  local blocked = {}
+  for _, entry in ipairs(castReadableArgs) do
+    local key, label = entry[1], entry[2]
+    if trigger["use_" .. key] ~= nil then
+      local readable = false
+      if castSpellArgs[key] and type(trigger[key]) == "table" and #trigger[key] > 0 then
+        readable = true
+        for _, value in ipairs(trigger[key]) do
+          if not CastSpellNeverSecret(value) then
+            readable = false
+            break
+          end
+        end
+      end
+      if not readable then
+        blocked[#blocked + 1] = L[label]
+      end
+    end
+  end
+  if #blocked > 0 then
+    return L["|cffff2020Won't match in combat:|r %s. |cffff9933Casts by other units are secret in combat; only your own stay readable.|r"]:format(table.concat(blocked, ", "))
+  end
+  return L["|cffff9933In combat, casts by other units are secret: they still show with their bar and timer, but cannot be filtered.|r"]
+end
+
 Private.event_prototypes = {
+  ["Blizzard Cooldown Manager"] = Private.CooldownViewerPrototype,
+  ["Blizzard CDM Buff"] = Private.CooldownViewerBuffPrototype,
+  ["Blizzard CDM Utility"] = Private.CooldownViewerUtilityPrototype,
+  ["Blizzard CDM Item"] = Private.CooldownViewerItemPrototype,
   ["Unit Characteristics"] = {
     type = "unit",
     events = function(trigger)
@@ -5574,7 +5692,8 @@ Private.event_prototypes = {
         local stacks = maxCharges and maxCharges ~= 1 and charges or (spellCount and spellCount > 0 and spellCount) or nil;
         if showlossofcontrol and startTime and duration then
           local locStart, locDuration = WeakAuras.GetSpellLossOfControlCooldown(spellname);
-          if locStart and locDuration and (locStart + locDuration) > (startTime + duration) then
+          if locStart and locDuration and not Private.ExecEnv.IsSecret(locStart, locDuration)
+             and (locStart + locDuration) > (startTime + duration) then
             startTime = locStart
             duration = locDuration
           end
@@ -7009,7 +7128,7 @@ Private.event_prototypes = {
         ret = ret .. [=[local active = Private.ExecEnv.IsUsableSpell(spellName or "")]=]
       else
         ret = ret .. [=[
-        local startTime, duration, gcdCooldown, readyTime, paused = WeakAuras.GetSpellCooldown(effectiveSpellId, nil, nil, nil, nil)
+        local startTime, duration, gcdCooldown, readyTime, _, paused = WeakAuras.GetSpellCooldown(effectiveSpellId, nil, nil, nil, nil)
         local charges, maxCharges, spellCount, chargeGainTime, chargeLostTime = WeakAuras.GetSpellCharges(effectiveSpellId, nil)
         local stacks = maxCharges and maxCharges > 1 and charges
                        or spellCount and spellCount > 0 and spellCount
@@ -7746,6 +7865,7 @@ Private.event_prototypes = {
     },
     internal_events = {
       "COOLDOWN_REMAINING_CHECK",
+      "WA_TOTEM_UPDATE",
     },
     force_events = "PLAYER_ENTERING_WORLD",
     name = L["Totem"],
@@ -7771,12 +7891,12 @@ Private.event_prototypes = {
         end
 
         if (totemType) then -- Check a specific totem slot
-          if slotId and event == "PLAYER_TOTEM_UPDATE" and totemType ~= slotId then
+          if slotId and (event == "PLAYER_TOTEM_UPDATE" or event == "WA_TOTEM_UPDATE") and totemType ~= slotId then
             -- PLAYER_TOTEM_UPDATE for a different slot
             return false
           end
 
-          local _, totemName, startTime, duration, icon, modRate, spellId = GetTotemInfo(totemType);
+          local _, totemName, startTime, duration, icon, modRate, spellId = Private.ExecEnv.GetTotemSlotInfo(totemType);
           local durationObject
           if Private.ExecEnv.IsSecret(startTime, duration) then
             durationObject = Private.ExecEnv.GetTotemDurationObject(totemType)
@@ -7831,7 +7951,7 @@ Private.event_prototypes = {
         elseif inverse then -- inverse without a specific slot
           local found = false;
           for i = 1, 5 do
-            local _, totemName, startTime, duration, icon, modRate, spellId = GetTotemInfo(i);
+            local _, totemName, startTime, duration, icon, modRate, spellId = Private.ExecEnv.GetTotemSlotInfo(i);
             if Private.ExecEnv.IsSecret(startTime, duration) then
               startTime = Private.ExecEnv.GetTotemDurationObject(i) and math.huge or 0
             end
@@ -7858,7 +7978,7 @@ Private.event_prototypes = {
           end
         else -- cloning, check all slots
           for i = 1, 5 do
-            local _, totemName, startTime, duration, icon, modRate, spellId = GetTotemInfo(i);
+            local _, totemName, startTime, duration, icon, modRate, spellId = Private.ExecEnv.GetTotemSlotInfo(i);
             local durationObject
             if Private.ExecEnv.IsSecret(startTime, duration) then
               durationObject = Private.ExecEnv.GetTotemDurationObject(i)
@@ -10077,6 +10197,12 @@ Private.event_prototypes = {
     statesParameter = "unit",
     args = {
       {
+        name = "castStatus",
+        type = "description",
+        display = "",
+        text = function(trigger) return Private.CastCombatStatus(trigger) end,
+      },
+      {
         name = "unit",
         required = true,
         display = L["Unit"],
@@ -10654,7 +10780,7 @@ Private.event_prototypes = {
       }
     },
     internal_events = function(trigger, untrigger)
-      local events = { "WA_DELAYED_PLAYER_ENTERING_WORLD" }
+      local events = { "WA_DELAYED_PLAYER_ENTERING_WORLD", "WA_RESTRICTION_CHANGED" }
       if trigger.use_moveSpeed then
         tinsert(events, "PLAYER_MOVE_SPEED_UPDATE")
       end
@@ -10667,6 +10793,7 @@ Private.event_prototypes = {
     end,
     init = function()
       local ret = [[
+        local statsAreSecret = Private.ExecEnv.AreUnitStatsSecret()
         local main_stat, _
         if WeakAuras.IsRetail() then
           _, _, _, _, _, main_stat = Private.ExecEnv.GetSpecializationInfo(Private.ExecEnv.GetSpecialization() or 0)
@@ -10686,7 +10813,7 @@ Private.event_prototypes = {
         name = "mainstat",
         display = L["Main Stat"],
         type = "number",
-        init = "UnitStat('player', main_stat or 1)",
+        init = "not statsAreSecret and (UnitStat('player', main_stat or 1)) or nil",
         store = true,
         enable = WeakAuras.IsRetail(),
         conditionType = "number",
@@ -10700,7 +10827,7 @@ Private.event_prototypes = {
         name = "strength",
         display = L["Strength"],
         type = "number",
-        init = "UnitStat('player', LE_UNIT_STAT_STRENGTH)",
+        init = "not statsAreSecret and (UnitStat('player', LE_UNIT_STAT_STRENGTH)) or nil",
         store = true,
         enable = WeakAuras.IsClassicOrTBCOrWrathOrCataOrMists(),
         conditionType = "number",
@@ -10714,7 +10841,7 @@ Private.event_prototypes = {
         name = "agility",
         display = L["Agility"],
         type = "number",
-        init = "UnitStat('player', LE_UNIT_STAT_AGILITY)",
+        init = "not statsAreSecret and (UnitStat('player', LE_UNIT_STAT_AGILITY)) or nil",
         store = true,
         enable = WeakAuras.IsClassicOrTBCOrWrathOrCataOrMists(),
         conditionType = "number",
@@ -10728,7 +10855,7 @@ Private.event_prototypes = {
         name = "intellect",
         display = L["Intellect"],
         type = "number",
-        init = "UnitStat('player', LE_UNIT_STAT_INTELLECT)",
+        init = "not statsAreSecret and (UnitStat('player', LE_UNIT_STAT_INTELLECT)) or nil",
         store = true,
         enable = WeakAuras.IsClassicOrTBCOrWrathOrCataOrMists(),
         conditionType = "number",
@@ -10742,7 +10869,7 @@ Private.event_prototypes = {
         name = "spirit",
         display = L["Spirit"],
         type = "number",
-        init = "UnitStat('player', 5)",
+        init = "not statsAreSecret and (UnitStat('player', 5)) or nil",
         store = true,
         enable = WeakAuras.IsClassicOrTBCOrWrathOrCataOrMists(),
         conditionType = "number",
@@ -10756,7 +10883,7 @@ Private.event_prototypes = {
         name = "stamina",
         display = L["Stamina"],
         type = "number",
-        init = "select(2, UnitStat('player', LE_UNIT_STAT_STAMINA)) * GetUnitMaxHealthModifier('player')",
+        init = "not statsAreSecret and (select(2, UnitStat('player', LE_UNIT_STAT_STAMINA)) * GetUnitMaxHealthModifier('player')) or nil",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -10773,7 +10900,7 @@ Private.event_prototypes = {
         name = "criticalrating",
         display = L["Critical Rating"],
         type = "number",
-        init = "max(GetCombatRating(CR_CRIT_MELEE), GetCombatRating(CR_CRIT_RANGED), GetCombatRating(CR_CRIT_SPELL))",
+        init = "not statsAreSecret and (max(GetCombatRating(CR_CRIT_MELEE), GetCombatRating(CR_CRIT_RANGED), GetCombatRating(CR_CRIT_SPELL))) or nil",
         store = true,
         enable = WeakAuras.IsTBCOrWrathOrCataOrMistsOrRetail(),
         conditionType = "number",
@@ -10787,7 +10914,7 @@ Private.event_prototypes = {
         name = "criticalpercent",
         display = L["Critical (%)"],
         type = "number",
-        init = "WeakAuras.GetCritChance()",
+        init = "not statsAreSecret and (WeakAuras.GetCritChance()) or nil",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -10800,7 +10927,7 @@ Private.event_prototypes = {
         name = "hitrating",
         display = L["Hit Rating"],
         type = "number",
-        init = "max(GetCombatRating(CR_HIT_MELEE), GetCombatRating(CR_HIT_RANGED), GetCombatRating(CR_HIT_SPELL))",
+        init = "not statsAreSecret and (max(GetCombatRating(CR_HIT_MELEE), GetCombatRating(CR_HIT_RANGED), GetCombatRating(CR_HIT_SPELL))) or nil",
         store = true,
         enable = WeakAuras.IsTBCOrWrathOrCataOrMists(),
         conditionType = "number",
@@ -10814,7 +10941,7 @@ Private.event_prototypes = {
         name = "hitpercent",
         display = L["Hit (%)"],
         type = "number",
-        init = "WeakAuras.GetHitChance()",
+        init = "not statsAreSecret and (WeakAuras.GetHitChance()) or nil",
         store = true,
         conditionType = "number",
         enable = WeakAuras.IsTBCOrWrathOrCataOrMists(),
@@ -10829,7 +10956,7 @@ Private.event_prototypes = {
         name = "hasterating",
         display = L["Haste Rating"],
         type = "number",
-        init = "GetCombatRating(CR_HASTE_SPELL)",
+        init = "not statsAreSecret and (GetCombatRating(CR_HASTE_SPELL)) or nil",
         store = true,
         enable = WeakAuras.IsTBCOrWrathOrCataOrMists(),
         conditionType = "number",
@@ -10843,7 +10970,7 @@ Private.event_prototypes = {
         name = "hastepercent",
         display = L["Haste (%)"],
         type = "number",
-        init = "GetHaste()",
+        init = "not statsAreSecret and (GetHaste()) or nil",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -10856,7 +10983,7 @@ Private.event_prototypes = {
         name = "meleehastepercent",
         display = L["Melee Haste (%)"],
         type = "number",
-        init = "GetMeleeHaste()",
+        init = "not statsAreSecret and (GetMeleeHaste()) or nil",
         store = true,
         conditionType = "number",
         enable = WeakAuras.IsTBCOrWrathOrCataOrMists(),
@@ -10871,7 +10998,7 @@ Private.event_prototypes = {
         name = "expertiserating",
         display = L["Expertise Rating"],
         type = "number",
-        init = "GetCombatRating(CR_EXPERTISE)",
+        init = "not statsAreSecret and (GetCombatRating(CR_EXPERTISE)) or nil",
         store = true,
         enable = WeakAuras.IsTBCOrWrathOrCataOrMists(),
         conditionType = "number",
@@ -10885,7 +11012,7 @@ Private.event_prototypes = {
         name = "expertisebonus",
         display = L["Expertise Bonus"],
         type = "number",
-        init = "GetCombatRatingBonus(CR_EXPERTISE)",
+        init = "not statsAreSecret and (GetCombatRatingBonus(CR_EXPERTISE)) or nil",
         store = true,
         conditionType = "number",
         enable = WeakAuras.IsTBCOrWrathOrCataOrMists(),
@@ -10899,7 +11026,7 @@ Private.event_prototypes = {
         name = "armorpenrating",
         display = L["Armor Peneration Rating"],
         type = "number",
-        init = "GetCombatRating(CR_ARMOR_PENETRATION)",
+        init = "not statsAreSecret and (GetCombatRating(CR_ARMOR_PENETRATION)) or nil",
         store = true,
         enable = WeakAuras.IsWrathClassic(),
         conditionType = "number",
@@ -10913,7 +11040,7 @@ Private.event_prototypes = {
         name = "armorpenpercent",
         display = L["Armor Peneration Percent"],
         type = "number",
-        init = "GetArmorPenetration()",
+        init = "not statsAreSecret and (GetArmorPenetration()) or nil",
         store = true,
         conditionType = "number",
         enable = WeakAuras.IsTBCOrWrath(),
@@ -10927,7 +11054,7 @@ Private.event_prototypes = {
         name = "spellpenpercent",
         display = L["Spell Peneration Percent"],
         type = "number",
-        init = "GetSpellPenetration()",
+        init = "not statsAreSecret and (GetSpellPenetration()) or nil",
         store = true,
         enable = WeakAuras.IsTBCOrWrathOrCataOrMists(),
         conditionType = "number",
@@ -10942,7 +11069,7 @@ Private.event_prototypes = {
         name = "masteryrating",
         display = L["Mastery Rating"],
         type = "number",
-        init = "GetCombatRating(CR_MASTERY)",
+        init = "not statsAreSecret and (GetCombatRating(CR_MASTERY)) or nil",
         store = true,
         enable = WeakAuras.IsCataOrMistsOrRetail(),
         conditionType = "number",
@@ -10956,7 +11083,7 @@ Private.event_prototypes = {
         name = "masterypercent",
         display = L["Mastery (%)"],
         type = "number",
-        init = "WeakAuras.IsCataClassic() and GetMastery() or GetMasteryEffect()",
+        init = "not statsAreSecret and (WeakAuras.IsCataClassic() and GetMastery() or GetMasteryEffect()) or nil",
         store = true,
         enable = WeakAuras.IsCataOrMistsOrRetail(),
         conditionType = "number",
@@ -10971,7 +11098,7 @@ Private.event_prototypes = {
         name = "versatilityrating",
         display = L["Versatility Rating"],
         type = "number",
-        init = "GetCombatRating(CR_VERSATILITY_DAMAGE_DONE)",
+        init = "not statsAreSecret and (GetCombatRating(CR_VERSATILITY_DAMAGE_DONE)) or nil",
         store = true,
         enable = WeakAuras.IsRetail(),
         conditionType = "number",
@@ -10985,7 +11112,7 @@ Private.event_prototypes = {
         name = "versatilitypercent",
         display = L["Versatility (%)"],
         type = "number",
-        init = "GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) + GetVersatilityBonus(CR_VERSATILITY_DAMAGE_DONE)",
+        init = "not statsAreSecret and (GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) + GetVersatilityBonus(CR_VERSATILITY_DAMAGE_DONE)) or nil",
         store = true,
         enable = WeakAuras.IsRetail(),
         conditionType = "number",
@@ -11000,7 +11127,7 @@ Private.event_prototypes = {
         name = "attackpower",
         display = L["Attack Power"],
         type = "number",
-        init = "WeakAuras.GetEffectiveAttackPower()",
+        init = "not statsAreSecret and (WeakAuras.GetEffectiveAttackPower()) or nil",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -11012,7 +11139,7 @@ Private.event_prototypes = {
         name = "spellpower",
         display = L["Spell Power"],
         type = "number",
-        init = "WeakAuras.GetEffectiveSpellPower()",
+        init = "not statsAreSecret and (WeakAuras.GetEffectiveSpellPower()) or nil",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -11031,7 +11158,7 @@ Private.event_prototypes = {
         name = "leechrating",
         display = L["Leech Rating"],
         type = "number",
-        init = "GetCombatRating(CR_LIFESTEAL)",
+        init = "not statsAreSecret and (GetCombatRating(CR_LIFESTEAL)) or nil",
         store = true,
         enable = WeakAuras.IsRetail(),
         conditionType = "number",
@@ -11045,7 +11172,7 @@ Private.event_prototypes = {
         name = "leechpercent",
         display = L["Leech (%)"],
         type = "number",
-        init = "GetLifesteal()",
+        init = "not statsAreSecret and (GetLifesteal()) or nil",
         store = true,
         enable = WeakAuras.IsRetail(),
         conditionType = "number",
@@ -11060,7 +11187,7 @@ Private.event_prototypes = {
         name = "movespeedrating",
         display = L["Movement Speed Rating"],
         type = "number",
-        init = "GetCombatRating(CR_SPEED)",
+        init = "not statsAreSecret and (GetCombatRating(CR_SPEED)) or nil",
         store = true,
         enable = WeakAuras.IsRetail(),
         conditionType = "number",
@@ -11081,7 +11208,7 @@ Private.event_prototypes = {
         name = "movespeedpercent",
         display = L["Current Movement Speed (%)"],
         type = "number",
-        init = "GetUnitSpeed('player') / 7 * 100",
+        init = "not statsAreSecret and (GetUnitSpeed('player') / 7 * 100) or nil",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -11094,7 +11221,7 @@ Private.event_prototypes = {
         name = "runspeedpercent",
         display = L["Run Speed (%)"],
         type = "number",
-        init = "select(2, GetUnitSpeed('player')) / 7 * 100",
+        init = "not statsAreSecret and (select(2, GetUnitSpeed('player')) / 7 * 100) or nil",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -11107,7 +11234,7 @@ Private.event_prototypes = {
         name = "avoidancerating",
         display = L["Avoidance Rating"],
         type = "number",
-        init = "GetCombatRating(CR_AVOIDANCE)",
+        init = "not statsAreSecret and (GetCombatRating(CR_AVOIDANCE)) or nil",
         store = true,
         enable = WeakAuras.IsRetail(),
         conditionType = "number",
@@ -11121,7 +11248,7 @@ Private.event_prototypes = {
         name = "avoidancepercent",
         display = L["Avoidance (%)"],
         type = "number",
-        init = "GetAvoidance()",
+        init = "not statsAreSecret and (GetAvoidance()) or nil",
         store = true,
         enable = WeakAuras.IsRetail(),
         conditionType = "number",
@@ -11141,7 +11268,7 @@ Private.event_prototypes = {
         name = "defense",
         display = L["Defense"],
         type = "number",
-        init = "UnitDefense('player') + select(2, UnitDefense('player'))",
+        init = "not statsAreSecret and (UnitDefense('player') + select(2, UnitDefense('player'))) or nil",
         store = true,
         enable = WeakAuras.IsTBCOrWrath(),
         conditionType = "number",
@@ -11155,7 +11282,7 @@ Private.event_prototypes = {
         name = "dodgerating",
         display = L["Dodge Rating"],
         type = "number",
-        init = "GetCombatRating(CR_DODGE)",
+        init = "not statsAreSecret and (GetCombatRating(CR_DODGE)) or nil",
         store = true,
         enable = WeakAuras.IsTBCOrWrathOrCataOrMistsOrRetail(),
         conditionType = "number",
@@ -11169,7 +11296,7 @@ Private.event_prototypes = {
         name = "dodgepercent",
         display = L["Dodge (%)"],
         type = "number",
-        init = "GetDodgeChance()",
+        init = "not statsAreSecret and (GetDodgeChance()) or nil",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -11182,7 +11309,7 @@ Private.event_prototypes = {
         name = "parryrating",
         display = L["Parry Rating"],
         type = "number",
-        init = "GetCombatRating(CR_PARRY)",
+        init = "not statsAreSecret and (GetCombatRating(CR_PARRY)) or nil",
         store = true,
         enable = WeakAuras.IsTBCOrWrathOrCataOrMistsOrRetail(),
         conditionType = "number",
@@ -11196,7 +11323,7 @@ Private.event_prototypes = {
         name = "parrypercent",
         display = L["Parry (%)"],
         type = "number",
-        init = "GetParryChance()",
+        init = "not statsAreSecret and (GetParryChance()) or nil",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -11209,7 +11336,7 @@ Private.event_prototypes = {
         name = "blockpercent",
         display = L["Block (%)"],
         type = "number",
-        init = "GetBlockChance()",
+        init = "not statsAreSecret and (GetBlockChance()) or nil",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -11222,7 +11349,7 @@ Private.event_prototypes = {
         name = "blocktargetpercent",
         display = L["Block against Target (%)"],
         type = "number",
-        init = "PaperDollFrame_GetArmorReductionAgainstTarget(GetShieldBlock())",
+        init = "not statsAreSecret and (PaperDollFrame_GetArmorReductionAgainstTarget(GetShieldBlock())) or nil",
         store = true,
         enable = WeakAuras.IsRetail(),
         conditionType = "number",
@@ -11237,7 +11364,7 @@ Private.event_prototypes = {
         name = "blockvalue",
         display = L["Block Value"],
         type = "number",
-        init = "GetShieldBlock()",
+        init = "not statsAreSecret and (GetShieldBlock()) or nil",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -11249,7 +11376,7 @@ Private.event_prototypes = {
         name = "staggerpercent",
         display = L["Stagger (%)"],
         type = "number",
-        init = "C_PaperDollInfo.GetStaggerPercentage(\"player\")",
+        init = "not statsAreSecret and (C_PaperDollInfo.GetStaggerPercentage(\"player\")) or nil",
         store = true,
         enable = WeakAuras.IsRetail(),
         conditionType = "number",
@@ -11264,7 +11391,7 @@ Private.event_prototypes = {
         name = "staggertargetpercent",
         display = L["Stagger against Target (%)"],
         type = "number",
-        init = "select(UnitExists(\"target\") and 2 or 1, C_PaperDollInfo.GetStaggerPercentage(\"player\"))",
+        init = "not statsAreSecret and (select(UnitExists(\"target\") and 2 or 1, C_PaperDollInfo.GetStaggerPercentage(\"player\"))) or nil",
         store = true,
         enable = WeakAuras.IsRetail(),
         conditionType = "number",
@@ -11279,7 +11406,7 @@ Private.event_prototypes = {
         name = "armorrating",
         display = L["Armor Rating"],
         type = "number",
-        init = "select(2, UnitArmor('player'))",
+        init = "not statsAreSecret and (select(2, UnitArmor('player'))) or nil",
         store = true,
         conditionType = "number",
         multiEntry = {
@@ -11291,7 +11418,7 @@ Private.event_prototypes = {
         name = "armorpercent",
         display = L["Armor (%)"],
         type = "number",
-        init = "PaperDollFrame_GetArmorReduction(select(2, UnitArmor('player')), UnitEffectiveLevel and UnitEffectiveLevel('player') or UnitLevel('player'))",
+        init = "not statsAreSecret and (PaperDollFrame_GetArmorReduction(select(2, UnitArmor('player')), UnitEffectiveLevel and UnitEffectiveLevel('player') or UnitLevel('player'))) or nil",
         store = true,
         enable = WeakAuras.IsTBCOrWrathOrCataOrMistsOrRetail(),
         conditionType = "number",
@@ -11306,7 +11433,7 @@ Private.event_prototypes = {
         name = "armortargetpercent",
         display = L["Armor against Target (%)"],
         type = "number",
-        init = "PaperDollFrame_GetArmorReductionAgainstTarget(select(2, UnitArmor('player')))",
+        init = "not statsAreSecret and (PaperDollFrame_GetArmorReductionAgainstTarget(select(2, UnitArmor('player')))) or nil",
         store = true,
         enable = WeakAuras.IsRetail(),
         conditionType = "number",
@@ -11359,7 +11486,7 @@ Private.event_prototypes = {
         name = "resistanceholy",
         display = L["Holy Resistance"],
         type = "number",
-        init = "select(2, UnitResistance('player', 1))",
+        init = "not statsAreSecret and (select(2, UnitResistance('player', 1))) or nil",
         store = true,
         enable = WeakAuras.IsClassicOrTBCOrWrathOrCataOrMists(),
         conditionType = "number",
@@ -11373,7 +11500,7 @@ Private.event_prototypes = {
         name = "resistancefire",
         display = L["Fire Resistance"],
         type = "number",
-        init = "select(2, UnitResistance('player', 2))",
+        init = "not statsAreSecret and (select(2, UnitResistance('player', 2))) or nil",
         store = true,
         enable = WeakAuras.IsClassicOrTBCOrWrathOrCataOrMists(),
         conditionType = "number",
@@ -11387,7 +11514,7 @@ Private.event_prototypes = {
         name = "resistancenature",
         display = L["Nature Resistance"],
         type = "number",
-        init = "select(2, UnitResistance('player', 3))",
+        init = "not statsAreSecret and (select(2, UnitResistance('player', 3))) or nil",
         store = true,
         enable = WeakAuras.IsClassicOrTBCOrWrathOrCataOrMists(),
         conditionType = "number",
@@ -11401,7 +11528,7 @@ Private.event_prototypes = {
         name = "resistancefrost",
         display = L["Frost Resistance"],
         type = "number",
-        init = "select(2, UnitResistance('player', 4))",
+        init = "not statsAreSecret and (select(2, UnitResistance('player', 4))) or nil",
         store = true,
         enable = WeakAuras.IsClassicOrTBCOrWrathOrCataOrMists(),
         conditionType = "number",
@@ -11415,7 +11542,7 @@ Private.event_prototypes = {
         name = "resistanceshadow",
         display = L["Shadow Resistance"],
         type = "number",
-        init = "select(2, UnitResistance('player', 5))",
+        init = "not statsAreSecret and (select(2, UnitResistance('player', 5))) or nil",
         store = true,
         enable = WeakAuras.IsClassicOrTBCOrWrathOrCataOrMists(),
         conditionType = "number",
@@ -11429,7 +11556,7 @@ Private.event_prototypes = {
         name = "resistancearcane",
         display = L["Arcane Resistance"],
         type = "number",
-        init = "select(2, UnitResistance('player', 6))",
+        init = "not statsAreSecret and (select(2, UnitResistance('player', 6))) or nil",
         store = true,
         enable = WeakAuras.IsClassicOrTBCOrWrathOrCataOrMists(),
         conditionType = "number",
@@ -11891,6 +12018,87 @@ Private.event_prototypes = {
     progressType = "none"
   },
 
+  ["Spell in Range"] = {
+    type = "spell",
+    events = {
+      ["events"] = {"FRAME_UPDATE"}
+    },
+    name = L["Spell in Range"],
+    statesParameter = "one",
+    init = function(trigger)
+      trigger.unit = trigger.unit or "target"
+      local spell
+      if trigger.use_exact_spellName then
+        spell = tostring(tonumber(trigger.spellName) or 0)
+      else
+        local name = type(trigger.spellName) == "number" and Private.ExecEnv.GetSpellName(trigger.spellName) or trigger.spellName or ""
+        spell = ("%q"):format(name)
+      end
+      return ([[
+        local unit = %q
+        local spell = %s
+        local name, _, icon = Private.ExecEnv.GetSpellInfo(spell)
+        local inRange = UnitExists(unit) and WeakAuras.IsSpellInRange(spell, unit) or nil
+        local active = inRange == %d
+      ]]):format(trigger.unit, spell, trigger.use_inverse and 0 or 1)
+    end,
+    GetNameAndIcon = function(trigger)
+      local name, _, icon = Private.ExecEnv.GetSpellInfo(trigger.spellName)
+      return name, icon
+    end,
+    args = {
+      {
+        name = "spellName",
+        required = true,
+        display = L["Spell"],
+        type = "spell",
+        test = "true",
+        showExactOption = true,
+      },
+      {
+        name = "unit",
+        required = true,
+        display = L["Unit"],
+        type = "unit",
+        init = "unit",
+        values = "unit_types_range_check",
+        test = "true",
+        store = true
+      },
+      {
+        name = "inverse",
+        display = L["Inverse"],
+        desc = L["Show while the unit is out of the spell's range instead."],
+        type = "toggle",
+        test = "true",
+      },
+      {
+        name = "name",
+        display = L["Name"],
+        hidden = true,
+        init = "name",
+        test = "true",
+        store = true,
+        conditionType = "string"
+      },
+      {
+        name = "icon",
+        hidden = true,
+        init = "icon",
+        test = "true",
+        store = true
+      },
+      {
+        hidden = true,
+        test = "active"
+      }
+    },
+    iconFunc = function(trigger)
+      return Private.ExecEnv.GetSpellIcon(trigger.spellName or 0);
+    end,
+    automaticrequired = true,
+    progressType = "none"
+  },
   ["Range Check"] = {
     type = "unit",
     events = {
@@ -13197,6 +13405,7 @@ for name, prototype in pairs(Private.event_prototypes) do
   Private.category_event_prototype[prototype.type] = Private.category_event_prototype[prototype.type] or {}
   Private.category_event_prototype[prototype.type][name] = prototype.name
 end
+Private.category_event_prototype.cdm["Blizzard CDM Utility"] = nil
 
 Private.dynamic_texts = {
   ["p"] = {

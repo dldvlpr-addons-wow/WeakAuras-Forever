@@ -6,9 +6,114 @@ a Classic client running on the modern 12.x engine (interface 16001).
 Original work: The WeakAuras Team, GPL-2.0 (see `WeakAuras/LICENSE`).
 Modifications: dldvlpr, GPL-2.0.
 Portions taken from ForeverAuras (m33shoq, GPL-2.0), a WeakAuras fork for WoW Forever: the talent data reader and
-the talent picker widget, see 2026-09-30.
+the talent picker widget, see 2026-09-30; the secret value handling, load options and options panels listed on
+2026-10-03. Specialization data in `WeakAuras/PlayerSpecialization.lua` comes from talentsforever.com under
+CC-BY 4.0, see `WeakAuras/SpecializationData-LICENSE.txt`, and the spell rank data in `WeakAuras/SecretAuraRanks.lua`
+too, see `WeakAuras/SpellRankData-LICENSE.txt`.
 
 This file lists every file changed from the upstream 5.22.0 release, as required by GPL-2.0 section 2a.
+
+## 2026-10-03
+
+Port of the ForeverAuras features this fork did not have yet. Code taken from ForeverAuras and adapted to this
+fork's names and existing mechanisms. Not tested in game yet.
+
+### Added
+- `WeakAuras/PlayerSpecialization.lua`, `WeakAuras/SpecializationData-LICENSE.txt`: "Specialization" load option
+  (`forever_spec`), deduced from the final talents learned in each of the 27 talent trees.
+- `WeakAuras/Prototypes.lua`: load options "Secret Restrictions Active" (`addonRestrictionsActive`) and "Enabled
+  BossMod ID (BW Only)" (`enabledBossModID`); "Spell in Range" trigger; combat readability status in the Cast
+  trigger options, read from `C_Secrets.GetSpellCastSecrecy`.
+- `WeakAuras/BossMods.lua`: `WeakAuras.IsBossModEnabled`, `WA_BOSSMOD_ENABLED_STATE_CHANGED`.
+- `WeakAuras/TextStyle.lua`: `Private.ApplyTextFont`, shared font and shadow setup for Text regions and sub texts.
+- `WeakAuras/DurationText.lua`: duration text formatters.
+- `WeakAuras/ProgressTextureNative.lua`: native progress texture helpers.
+- `WeakAurasOptions/ColorPalette.lua`, `WeakAurasOptions/AceGUI-Widgets/AceGUIWidget-WeakAurasColorPicker.lua`:
+  palette next to the color picker (class colors, favorites, recent colors, hex field), saved in
+  `WeakAurasOptionsSaved.colorPalette`.
+- `WeakAurasOptions/VersionCheck.lua`: the options do not open when the Options and WeakAuras versions differ.
+- `WeakAurasOptions/TriggerSecretWarnings.lua`: warning in the trigger options for fields that are secret in combat
+  (`WeakAurasOptions/GenericTrigger.lua`, `WeakAurasOptions/BuffTrigger2.lua`).
+- Blizzard Cooldown Manager trigger type (`cdm`): `WeakAuras/CooldownViewerTrigger.lua`,
+  `WeakAuras/CooldownViewerCatalog.lua`, `WeakAuras/CDMAuraProgress.lua`, `WeakAuras/CDMBackground.lua`,
+  `WeakAuras/CDMSetup.lua`, `WeakAuras/SubRegionTypes/CDMDispel.lua`,
+  `WeakAurasOptions/SubRegionOptions/CDMDispel.lua`, `WeakAurasOptions/CooldownViewerOptions.lua`. Hooked into
+  `WeakAuras/Prototypes.lua`, `WeakAuras/GenericTrigger.lua`, `WeakAuras/Modernize.lua` (old cooldown manager
+  triggers moved to `cdm`), `WeakAuras/RegionTypes/RegionPrototype.lua`, `WeakAuras/RegionTypes/Icon.lua`,
+  `WeakAuras/RegionTypes/AuraBar.lua`, `WeakAuras/RegionTypes/ProgressTexture.lua`,
+  `WeakAuras/SubRegionTypes/SubText.lua`, `WeakAurasOptions/GenericTrigger.lua`,
+  `WeakAurasOptions/BuffTrigger2.lua`, `WeakAurasOptions/CommonOptions.lua`,
+  `WeakAurasOptions/RegionOptions/Icon.lua`, `WeakAurasOptions/SubRegionOptions/SubText.lua`, and
+  `WeakAurasOptions/OptionsFrames/OptionsFrame.lua` ("Hide Blizzard's CDM", saved as `cdmHideBlizzard`).
+- Aura (Modern) trigger type (`secretAura`), drawn by the game's aura widgets: `WeakAuras/SecretAuraRanks.lua`,
+  `WeakAuras/BlizzardAuraDisplay.lua`, `WeakAuras/SecretAuraPreview.lua`, `WeakAuras/DispelTypeDisplay.lua`,
+  `WeakAuras/SecretAuraAppearance.lua`, `WeakAuras/SecretAuraConditions.lua`, `WeakAuras/SecretAuraSingle.lua`
+  (learned durations saved in `WeakAurasSaved.auraDurations` and `WeakAurasSaved.auraProfiles`),
+  `WeakAuras/SecretAuraGlow.lua`, `WeakAuras/SecretAuraFlow.lua` (Modern Aura Group), `WeakAuras/SecretAuraTrigger.lua`,
+  `WeakAuras/SubRegionTypes/CDMDispelBorder.lua`, `WeakAurasOptions/SubRegionOptions/CDMDispelBorder.lua`,
+  `WeakAurasOptions/AuraDisplayOptions.lua`, `WeakAurasOptions/AuraTriggerOptions.lua`,
+  `WeakAurasOptions/SecretAuraTriggerOptions.lua`. Hooked into `WeakAuras/WeakAuras.lua` (release, migration,
+  restore and modify around the region, native actions, unit frame and nameplate anchoring),
+  `WeakAuras/Conditions.lua` (native conditions), `WeakAuras/RegionTypes/RegionPrototype.lua`,
+  `WeakAuras/RegionTypes/Group.lua` (`blizzardFlow*` settings), `WeakAurasOptions/CommonOptions.lua`,
+  `WeakAurasOptions/ConditionOptions.lua`, `WeakAurasOptions/DisplayOptions.lua`, `WeakAurasOptions/TriggerOptions.lua`
+  (`secretFallback`), `WeakAurasOptions/ActionOptions.lua`, `WeakAurasOptions/WeakAurasOptions.lua`,
+  `WeakAurasOptions/RegionOptions/Group.lua`, `WeakAurasOptions/OptionsFrames/OptionsFrame.lua` (New "Modern Aura
+  Group"), `WeakAurasOptions/SubRegionOptions/SubRegionCommon.lua`,
+  `WeakAurasOptions/AceGUI-Widgets/AceGUIWidget-WeakAurasDisplayButton.lua`.
+
+### Changed
+- `WeakAuras/Init.lua`: `WeakAuras.IsSecretStateActive`.
+- `WeakAuras/GenericTrigger.lua`:
+  - spell cooldowns under secret values: a public ready state is polled every 0.1 s for spells on cooldown, kept
+    not ready for 1.6 s after a global cooldown, and Cooldown Ready fires once on the transition, ignoring the
+    shared Shoot cooldown;
+  - Loss of Control cooldown read through `C_Spell.GetSpellLossOfControlCooldownInfo` first;
+  - totem name, icon and spell are kept from the last readable values when they become secret
+    (`WeakAurasSaved.totemSpells`);
+  - crit and hit chance return 0 while unit stats are secret;
+  - the swing timer no longer registers the combat log;
+  - `WA_SECRET_STATE_UPDATE` is fired with the restriction change.
+- `WeakAuras/Prototypes.lua`: Spell in Range through `C_Spell.IsSpellInRange`, attack and spell power and Character
+  Stats guarded against secret values, Totem trigger through the kept slot values.
+- `WeakAuras/WeakAuras.lua`: load options are evaluated again when restrictions or boss mod modules change; `/wa cdm`
+  hides the Blizzard Cooldown Manager by opacity instead of turning its CVar off, so `cdm` triggers keep working.
+- `WeakAuras/ForeverAurasImport.lua`: ForeverAuras `cdm` and `secretAura` triggers and dispel borders are kept as
+  they are instead of being converted; "Converted from ForeverAuras." is printed only when something was converted.
+- `WeakAuras/CHANGELOG.md`, `WeakAurasOptions/Changelog.lua`: 1.4.0.
+- `WeakAurasOptions/LoadOptions.lua`: a description whose text is a function receives the trigger.
+- `WeakAuras/RegionTypes/RegionPrototype.lua`: `durationObject` progress source, secret value and total kept apart,
+  guards on secret alpha, times and texture paths.
+- `WeakAuras/RegionTypes/ProgressTexture.lua`: native linear fill with inverse direction, smoothing, and native
+  ring with crop, rotation, mirror and start and end angles.
+- `WeakAuras/RegionTypes/AuraBar.lua`: inverse direction and smoothing for a secret value, native additional bars.
+- `WeakAuras/RegionTypes/Text.lua`, `WeakAuras/SubRegionTypes/SubText.lua`: `ApplyTextFont`, secret text and size
+  guards.
+- `WeakAuras/RegionTypes/DynamicGroup.lua`: layout delayed to the end of combat when an anchor is protected,
+  secret anchor sizes clamped to 1.
+- `WeakAurasOptions/OptionsFrames/OptionsFrame.lua`: color options use the palette color picker.
+- `WeakAuras/WeakAuras.toc`, `WeakAurasOptions/WeakAurasOptions.toc`: new files.
+- `.luacheckrc`: game globals read by the ported files.
+
+### Fixed
+- `WeakAuras/BuffTrigger2.lua`: the Name Pattern Match filter of the Aura trigger matched every aura. The equality
+  test was written `not name == pattern`, which is never true, and without an operator chosen the filter was
+  skipped. The operator now defaults to equality, and a secret aura name never matches.
+- `WeakAuras/Transmission.lua`: an aura exported by this addon is no longer run through the ForeverAuras import
+  conversion, found by the sender version of the import string.
+- `WeakAuras/Init.lua`, `WeakAuras/Libs/Archivist/Archivist.lua`: the alpha, experimental and debug blocks are
+  removed. They were already in the form the BigWigs packager writes, so the packager closed them a second time
+  (`--@end-alpha@]=]]=]`), and the 1.3.2 zip built by the release workflow did not load (`unexpected symbol near
+  ']'`, then `attempt to index global 'WeakAuras'`). These blocks were never run in a release.
+- `WeakAuras/Prototypes.lua`: the Action Usable trigger read `paused` from the 5th return of
+  `WeakAuras.GetSpellCooldown`, which is `modRate`; it now reads the 6th.
+- `WeakAuras/Prototypes.lua`: `WeakAuras.GetRange` and `WeakAuras.CheckRange` call LibRangeCheck under `pcall` and
+  return nothing when the range is secret.
+- `WeakAuras/Prototypes.lua`, `WeakAuras/GenericTrigger.lua`: `WeakAuras.GetCritChance`, `GetHitChance`,
+  `GetEffectiveAttackPower` and `GetEffectiveSpellPower` return `nil` instead of `0` while the stats are secret.
+- `WeakAuras/Prototypes.lua`, `WeakAuras/WeakAuras.lua`: the "Secret Restrictions Active" load option is computed once
+  per load scan and passed to the load functions, instead of once per aura.
+- `WeakAurasOptions/TriggerSecretWarnings.lua`: `UnitStagger` is only called when the client has it.
 
 ## 2026-10-02
 

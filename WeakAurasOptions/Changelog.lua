@@ -10,11 +10,55 @@ local AddonName = ...
 ---@class OptionsPrivate
 local OptionsPrivate = select(2, ...)
 OptionsPrivate.changelog = {
-  versionString = '1.3.2',
+  versionString = '1.4.0',
   dateString = '2026-10-03',
   fullChangeLogUrl = 'https://github.com/dldvlpr-addons-wow/WeakAuras-Forever/blob/main/CHANGES.md',
   highlightText = [==[
-- Aura names typed by hand work again: "Demon Skin" in an Aura trigger now matches the buff]==],  commitText = [==[1.3.2 (2026-10-03):
+- The addon loads again: the 1.3.2 download from CurseForge stopped at start-up and /wa did nothing
+- New trigger type: Aura (Modern), drawn by the game's own aura widgets, so duration and stacks keep moving in combat
+- New trigger type: Blizzard Cooldown Manager, drawn natively, so it keeps working in combat]==],  commitText = [==[1.4.0 (2026-10-03):
+
+New:
+
+- Aura (Modern) trigger: Show On, Remaining Time, Total Duration and Stack Count rules, native conditions (Aura Present, In Pandemic Window, Dispel Type, Aura Highlight), glow on the unit frame. ForeverAuras auras that use it are imported as they are
+- Modern Aura Group: from the New button or the multi-selection menu, with growth, spacing, sort, limit and grouping by unit frame or nameplate
+- Dispel Type Border sub element
+- Blizzard Cooldown Manager trigger: Cooldown, Buff/Debuff and Item, with remaining time, total, stacks and "require target" filters. ForeverAuras auras that use it are imported as they are
+- "Hide Blizzard's CDM" in the options and /wa cdm: hide the Blizzard Cooldown Manager while its triggers keep working
+- CDM Dispel Type Icon sub element
+- Load conditions: Specialization (deduced from the talents you learned), Secret Restrictions Active, Enabled BossMod ID (BigWigs)
+- Spell in Range trigger
+- Color picker palette: class colors, favorites, recent colors and a hex field
+- Warnings in the trigger options for values the game hides in combat, and combat status of the Cast trigger
+
+Changes:
+
+- Spell cooldowns in combat: ready and on cooldown states follow the spell, ignore the global cooldown and the shared Shoot cooldown, and Cooldown Ready fires once
+- Totems keep their name and icon in combat once each totem was placed out of combat
+- Progress Texture, Progress Bar and Text regions: more cases drawn natively in combat
+- Dynamic groups wait for the end of combat to move protected anchors
+- The swing timer no longer listens to the combat log
+
+Fixes:
+
+- The 1.3.2 zip built for CurseForge did not load: Init.lua stopped on "unexpected symbol near ']'"
+- Aura trigger, Name Pattern Match: the filter matched every aura, so an aura made for Demon Skin also showed Devotion Aura. It now matches the name, with equality when no operator is chosen
+- Action Usable trigger: a paused cooldown was read from the wrong value
+- Range Check: no Lua error when the game hides the range
+- Custom code: WeakAuras.GetCritChance, GetHitChance, GetEffectiveAttackPower and GetEffectiveSpellPower return nil instead of 0 while the game hides your stats
+
+Known limitations:
+
+- Tested in game: Aura (Modern) on a buff of the player, out of combat and in combat, the Secret Restrictions Active load condition, and the Range Check trigger in combat. Everything else listed under New and Changes is not tested in game yet
+- Aura (Modern) needs the spell ID of the aura itself, which can differ from the spell you cast on WoW Forever
+- /wa is also used by ForeverAuras: disable ForeverAuras, or type /weakauras
+- With the classic Aura trigger, buffs and debuffs are hidden in combat: a buff shown before the pull keeps counting down, stacks stay frozen, and a buff applied for the first time in combat only shows when combat ends. Use Aura (Modern) for combat
+- The Native Filter of the Aura trigger shows nothing at the moment
+- Combat log triggers never fire: the game forbids the combat log to addons
+- The Blizzard Cooldown Manager is not enabled for every class on the WoW Forever beta
+- Nameplate anchoring only works with the default Blizzard nameplates
+
+1.3.2 (2026-10-03):
 
 Fixes:
 

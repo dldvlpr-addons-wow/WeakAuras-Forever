@@ -167,6 +167,7 @@ Private.regionPrototype.AddProperties(properties, default);
 local function GetProperties(data)
   local overlayInfo = Private.GetOverlayInfo(data);
   local auraProperties = CopyTable(properties)
+  if Private.CDMAuraProgress.IsConfigured(data) then auraProperties.adjustedMin, auraProperties.adjustedMax = nil, nil end
   auraProperties.progressSource.values = Private.GetProgressSourcesForUi(data)
   if (overlayInfo and next(overlayInfo)) then
     for id, display in ipairs(overlayInfo) do
@@ -496,11 +497,29 @@ local function HideNative(self)
   end
 end
 
-local function ShowNativeLinear(self)
+local function ShowNativeLinear(self, inverse)
   local nativeBar = GetNativeBar(self)
   local orientation = nativeOrientation[self.orientation] or nativeOrientation.HORIZONTAL_INVERSE
+  local reverse = orientation[2]
+  inverse = inverse and true or false
   nativeBar:SetOrientation(orientation[1])
-  nativeBar:SetReverseFill(orientation[2])
+  nativeBar:SetReverseFill(not reverse ~= not inverse)
+  if self.nativeMaskInverse ~= inverse or self.nativeMaskOrientation ~= self.orientation then
+    self.nativeMaskInverse = inverse
+    self.nativeMaskOrientation = self.orientation
+    local mask, fill = self.nativeMask, nativeBar:GetStatusBarTexture()
+    mask:ClearAllPoints()
+    if not inverse then
+      mask:SetPoint("TOPLEFT", fill, "TOPLEFT", -0.05, 0.05)
+      mask:SetPoint("BOTTOMRIGHT", fill, "BOTTOMRIGHT", 0.05, -0.05)
+    elseif orientation[1] == "HORIZONTAL" then
+      mask:SetPoint("TOPLEFT", reverse and fill or self, reverse and "TOPRIGHT" or "TOPLEFT", -0.05, 0.05)
+      mask:SetPoint("BOTTOMRIGHT", reverse and self or fill, reverse and "BOTTOMRIGHT" or "BOTTOMLEFT", 0.05, -0.05)
+    else
+      mask:SetPoint("TOPLEFT", reverse and self or fill, reverse and "TOPLEFT" or "BOTTOMLEFT", -0.05, 0.05)
+      mask:SetPoint("BOTTOMRIGHT", reverse and fill or self, reverse and "TOPRIGHT" or "BOTTOMRIGHT", 0.05, -0.05)
+    end
+  end
   if not self.nativeLinearShown then
     self.nativeLinearShown = true
     self.foreground.texture:AddMaskTexture(self.nativeMask)
@@ -527,6 +546,18 @@ local function ShowNativeRadial(self, percent)
   if radial.SetRadialProgressBarReverse then
     radial:SetRadialProgressBarReverse(self.orientation == "ANTICLOCKWISE")
   end
+  radial:SetRotation(math.rad(self.auraRotation or 0))
+  self.nativeRadialCoord = self.nativeRadialCoord or Private.TextureCoords.create(radial)
+  self.nativeRadialCoord:SetFull()
+  self.nativeRadialCoord:Transform(self.crop_x or 1, self.crop_y or 1, self.effectiveTexRotation or self.texRotation or 0,
+                                   not self.mirror ~= not self.mirror_h, self.mirror_v, 0, 0)
+  self.nativeRadialCoord:Apply()
+  if radial.SetRadialProgressBarStartOffset
+     and (self.nativeRadialOffset or (self.startAngle or 0) ~= 0 or (self.endAngle or 360) ~= 360) then
+    radial:SetRadialProgressBarStartOffset(((self.startAngle or 0) + 180) % 360 / 360)
+    radial:SetRadialProgressBarEndOffset(((self.endAngle or 360) + 180) % 360 / 360)
+    self.nativeRadialOffset = true
+  end
   radial:SetRadialProgressBarPercent(percent)
   if not self.nativeRadialShown then
     self.nativeRadialShown = true
@@ -552,18 +583,19 @@ NativeRadialTick = function(self)
 end
 
 local function UpdateNativeValue(self)
-  if self.inverseDirection then
-    return false
-  end
   if self.circular then
-    if canDrawRadialPercent and type(self.secretPercent) == "number" then
+    if not self.inverseDirection and canDrawRadialPercent and type(self.secretPercent) == "number" then
       ShowNativeRadial(self, self.secretPercent)
       return true
     end
   elseif canDrawDurationObject and type(self.secretValue) == "number" and type(self.secretTotal) == "number" then
-    local nativeBar = ShowNativeLinear(self)
+    local nativeBar = ShowNativeLinear(self, self.inverseDirection)
     nativeBar:SetMinMaxValues(0, self.secretTotal)
-    nativeBar:SetValue(self.secretValue)
+    if self.useSmoothProgress and Enum.StatusBarInterpolation then
+      nativeBar:SetValue(self.secretValue, Enum.StatusBarInterpolation.ExponentialEaseOut)
+    else
+      nativeBar:SetValue(self.secretValue)
+    end
     return true
   end
   return false
@@ -932,6 +964,20 @@ local funcs = {
   end
 }
 
+for _, name in ipairs({"SetAuraRotation", "SetMirror", "UpdateEffectiveRotation", "Scale"}) do
+  local original = funcs[name]
+  funcs[name] = function(self, ...)
+    original(self, ...)
+    if self.nativeRadialShown then
+      if self.progressType == "static" then
+        self:UpdateValue()
+      else
+        self:UpdateTime()
+      end
+    end
+  end
+end
+
 local function create(parent)
   local region = CreateFrame("Frame", nil, parent);
   region.regionType = "progresstexture"
@@ -1156,6 +1202,7 @@ local function modify(parent, region, data)
   region:DoPosition(region)
   region:Color(data.foregroundColor[1], data.foregroundColor[2], data.foregroundColor[3], data.foregroundColor[4]);
 
+  Private.CDMAuraProgress.Modify(region, data)
   Private.regionPrototype.modifyFinish(parent, region, data);
 end
 

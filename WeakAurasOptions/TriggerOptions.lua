@@ -82,6 +82,43 @@ local function GetGlobalOptions(data)
         WeakAuras.UpdateThumbnail(data);
       end,
       hidden = function() return #data.triggers <= 1 end
+    },
+    secretFallback = {
+      type = "select",
+      name = "When Aura (Modern) Filters Are Not Met, Use",
+      desc = function()
+        local text = "Aura (Modern) triggers are always active. When their filters are not met, the display can use another trigger's information as a fallback. Select that trigger here."
+        local display = OptionsPrivate.Private.BlizzardAuraDisplay
+        if not display.GetSavedTrigger(data) then
+          text = text .. "\n\n|cffff9900Dynamic Information does not come from an Aura (Modern) trigger, so this has no effect.|r"
+        end
+        return text
+      end,
+      width = WeakAuras.doubleWidth,
+      order = 2.35,
+      values = function()
+        local vals = {next = "Next Active Trigger", none = "None"}
+        for i, entry in ipairs(data.triggers) do
+          if type(entry) == "table" and entry.trigger and entry.trigger.type ~= "secretAura" then
+            vals[i] = ("Trigger %i"):format(i)
+          end
+        end
+        return vals
+      end,
+      get = function()
+        return OptionsPrivate.Private.BlizzardAuraDisplay.FallbackChoice(data)
+      end,
+      set = function(info, v)
+        data.triggers.secretFallback = v ~= "next" and v or nil
+        WeakAuras.Add(data);
+      end,
+      hidden = function()
+        if #data.triggers <= 1 then return true end
+        for _, entry in ipairs(data.triggers) do
+          if type(entry) == "table" and entry.trigger and entry.trigger.type == "secretAura" then return false end
+        end
+        return true
+      end
     }
   }
 
@@ -298,12 +335,16 @@ function OptionsPrivate.GetTriggerTitle(data, triggernum)
       local event_prototype = OptionsPrivate.Private.event_prototypes[trigger.event]
       local triggerType = trigger.type
       local name
-      if triggerType == "aura2" then
+      if triggerType == "secretAura" then
+        name = "Aura (Modern)"
+      elseif triggerType == "aura2" then
         name = L["Aura"]
       elseif triggerType == "custom" then
         name = L["Custom"]
-      else
+      elseif event_prototype then
         name = event_prototype.name
+      else
+        name = trigger.event or trigger.type or "?"
       end
       return L["Trigger %i: %s"]:format(triggernum, name)
     end

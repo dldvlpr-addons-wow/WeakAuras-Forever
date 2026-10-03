@@ -9,6 +9,12 @@ exclude_files = { "**/Libs/**", ".claude/**", "**/.claude/**" }
 
 -- Every global the addons read or write, sorted
 globals = {
+  "AnchorUtil", "AuraContainerSortDirection", "AuraContainerSortMethod", "C_AuraContainerUtil", "C_EditMode",
+  "ColorPickerFrame", "CooldownViewerDataStoreSerializationMixin", "CooldownViewerLayoutManagerMixin",
+  "CooldownViewerSettings", "CooldownViewerSettingsDataProviderMixin", "CustomAuraContainerAuraProcessingPolicy",
+  "EditModeManagerFrame", "EditModePresetLayoutManager", "EventRegistry", "FojjiCore", "FojjiCoreDB", "GetTotemInfo",
+  "LATER", "LOCALIZED_CLASS_NAMES_MALE", "PixelUtil", "RELOADUI", "ReloadUI", "UnitIsFriend", "UnitPowerType",
+  "UnitStat",
   "AbbreviateLargeNumbers", "AbbreviateNumbers", "abs", "ACCEPT", "AceGUIWeakAurasInputWithIndentationInsertLink",
   "AceGUIWeakAurasMultiLineEditBoxInsertLink", "AceGUIWeakAurasMultiLineEditBoxWithEnterInsertLink",
   "AceGUIWidgetLSMlists", "AddonCompartmentFrame", "Ambiguate", "AMMOSLOT", "APIDocumentation",
